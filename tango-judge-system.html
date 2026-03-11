@@ -4,17 +4,12 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>🌹 Tango Judge System</title>
-
-  <!-- React -->
   <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-
-  <!-- Firebase SDK (CDN) -->
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
     import { getDatabase, ref, set, onValue, get } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
-
     const firebaseConfig = {
       apiKey: "AIzaSyAUssYz1mBEELqOOHECDCl2x6pI6tZr80k",
       authDomain: "tango-judge-system-bykimtokki.firebaseapp.com",
@@ -24,28 +19,21 @@
       messagingSenderId: "728131875464",
       appId: "1:728131875464:web:c88f3c794a881d071ae53d"
     };
-
     const app = initializeApp(firebaseConfig);
     const db  = getDatabase(app);
-
-    // React(Babel)에서 접근할 수 있도록 window에 등록
     window.__firebaseDB  = db;
     window.__fbRef       = ref;
     window.__fbSet       = set;
     window.__fbOnValue   = onValue;
     window.__fbGet       = get;
-
-    // Firebase 준비 완료 이벤트
     window.dispatchEvent(new Event("firebaseReady"));
   </script>
-
   <style>
     @media print { nav, .no-print { display:none !important; } body { background:#fff !important; color:#000 !important; } }
   </style>
 </head>
 <body>
   <div id="root"></div>
-
   <script type="text/babel">
     const { useState, useMemo } = React;
 
@@ -410,6 +398,11 @@ function SetupPanel({ tournament, setTournament, users, setUsers, directorLocks,
   const [newCatName, setNewCatName] = useState("");
   const [newCatType, setNewCatType] = useState("couple");
   const [newCatScoring, setNewCatScoring] = useState("detailed");
+  // 관리자 비밀번호 변경
+  const [newAdminPw, setNewAdminPw]     = useState("");
+  const [newAdminPw2, setNewAdminPw2]   = useState("");
+  const [adminPwMsg, setAdminPwMsg]     = useState("");
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [newJName, setNewJName] = useState("");
   const [newJPw, setNewJPw]     = useState("");
   const [newDName, setNewDName] = useState("");
@@ -585,6 +578,82 @@ function SetupPanel({ tournament, setTournament, users, setUsers, directorLocks,
                 ? "심판 화면에 평균·차이 열이 표시됩니다"
                 : "심판은 자신의 점수만 볼 수 있습니다 (독립 채점 모드)"}
             </p>
+          </div>
+        </div>
+      </div>
+
+      {/* ── 관리자 보안 설정 ── */}
+      <div className="card">
+        <h3 style={{ fontSize:"11px", textTransform:"uppercase", letterSpacing:"1px", color:"var(--muted)", marginBottom:"14px" }}>🔐 관리자 보안 설정</h3>
+        <div style={{ display:"flex", flexDirection:"column", gap:"16px" }}>
+
+          {/* 비밀번호 변경 */}
+          <div>
+            <p style={{ fontSize:"13px", fontWeight:600, marginBottom:"10px" }}>비밀번호 변경</p>
+            <div style={{ display:"flex", gap:"8px", flexWrap:"wrap", alignItems:"flex-start" }}>
+              <div style={{ display:"flex", flexDirection:"column", gap:"6px", flex:1, minWidth:"160px" }}>
+                <input type="password" value={newAdminPw} onChange={e=>{ setNewAdminPw(e.target.value); setAdminPwMsg(""); }}
+                  placeholder="새 비밀번호" />
+                <input type="password" value={newAdminPw2} onChange={e=>{ setNewAdminPw2(e.target.value); setAdminPwMsg(""); }}
+                  placeholder="새 비밀번호 확인" />
+              </div>
+              <button className="btn btn-gold btn-sm" style={{ alignSelf:"flex-end" }}
+                onClick={()=>{
+                  if (!newAdminPw.trim()) { setAdminPwMsg("비밀번호를 입력하세요"); return; }
+                  if (newAdminPw !== newAdminPw2) { setAdminPwMsg("비밀번호가 일치하지 않습니다"); return; }
+                  if (newAdminPw.length < 4) { setAdminPwMsg("비밀번호는 4자 이상이어야 합니다"); return; }
+                  setUsers(prev=>prev.map(u=>u.role==="admin"?{...u,password:newAdminPw.trim()}:u));
+                  setNewAdminPw(""); setNewAdminPw2("");
+                  setAdminPwMsg("✓ 비밀번호가 변경됐습니다");
+                }}>
+                변경
+              </button>
+            </div>
+            {adminPwMsg && (
+              <p style={{ fontSize:"12px", marginTop:"6px", color:adminPwMsg.startsWith("✓")?"var(--green)":"var(--red2)" }}>
+                {adminPwMsg}
+              </p>
+            )}
+          </div>
+
+          {/* 관리자 초기화 */}
+          <div style={{ borderTop:"1px solid var(--border)", paddingTop:"14px" }}>
+            <p style={{ fontSize:"13px", fontWeight:600, marginBottom:"4px" }}>관리자 계정 초기화</p>
+            <p style={{ fontSize:"12px", color:"var(--muted)", marginBottom:"10px" }}>
+              비밀번호를 잊어버렸을 때 사용하세요. Firebase 콘솔에서 직접 실행해야 합니다.
+            </p>
+            <div style={{ background:"rgba(192,57,43,.06)", border:"1px solid rgba(192,57,43,.2)", borderRadius:"8px", padding:"12px 14px" }}>
+              <p style={{ fontSize:"12px", color:"var(--muted)", lineHeight:1.7 }}>
+                <strong style={{ color:"var(--text)" }}>초기화 방법:</strong><br/>
+                1. <a href="https://console.firebase.google.com" target="_blank" rel="noreferrer" style={{ color:"var(--gold)" }}>Firebase 콘솔</a> 접속<br/>
+                2. Realtime Database → 데이터 탭<br/>
+                3. <code style={{ background:"var(--bg3)", padding:"1px 6px", borderRadius:"3px", fontSize:"11px" }}>users</code> 항목에서 admin 계정의 <code style={{ background:"var(--bg3)", padding:"1px 6px", borderRadius:"3px", fontSize:"11px" }}>password</code> 값을 <code style={{ background:"var(--bg3)", padding:"1px 6px", borderRadius:"3px", fontSize:"11px" }}>0000</code> 으로 수정
+              </p>
+            </div>
+            <div style={{ marginTop:"10px" }}>
+              <p style={{ fontSize:"12px", color:"var(--muted)", marginBottom:"8px" }}>
+                또는 아래 버튼으로 admin 비밀번호를 <strong>0000</strong>으로 즉시 초기화:
+              </p>
+              {!showResetConfirm ? (
+                <button className="btn btn-ghost btn-sm" style={{ borderColor:"var(--red2)", color:"var(--red2)" }}
+                  onClick={()=>setShowResetConfirm(true)}>
+                  ⚠ admin 비밀번호 0000으로 초기화
+                </button>
+              ) : (
+                <div style={{ display:"flex", gap:"8px", alignItems:"center", flexWrap:"wrap" }}>
+                  <span style={{ fontSize:"12px", color:"var(--warn)" }}>정말 초기화하시겠습니까?</span>
+                  <button className="btn btn-red btn-sm"
+                    onClick={()=>{
+                      setUsers(prev=>prev.map(u=>u.role==="admin"?{...u,password:"0000"}:u));
+                      setShowResetConfirm(false);
+                      setAdminPwMsg("✓ admin 비밀번호가 0000으로 초기화됐습니다");
+                    }}>
+                    확인, 초기화
+                  </button>
+                  <button className="btn btn-ghost btn-sm" onClick={()=>setShowResetConfirm(false)}>취소</button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -2732,17 +2801,13 @@ function App() {
 
 
 
-    // Firebase 준비 후 React 앱 마운트
     const mountApp = () => {
       const root = ReactDOM.createRoot(document.getElementById('root'));
       root.render(<App />);
     };
-
-    if (window.__firebaseDB) {
-      mountApp();
-    } else {
+    if (window.__firebaseDB) { mountApp(); }
+    else {
       window.addEventListener("firebaseReady", mountApp, { once: true });
-      // 3초 후에도 안 되면 에러 상태로 마운트
       setTimeout(()=>{ if (!window.__firebaseDB) mountApp(); }, 3000);
     }
   </script>
