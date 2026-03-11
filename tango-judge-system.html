@@ -4,13 +4,17 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>🌹 Tango Judge System</title>
+
+  <!-- React -->
   <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-  <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-    import { getDatabase, ref, set, onValue, get } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
-    const firebaseConfig = {
+
+  <!-- Firebase compat (모듈 아닌 일반 스크립트 — 순서 보장) -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+  <script>
+    firebase.initializeApp({
       apiKey: "AIzaSyAUssYz1mBEELqOOHECDCl2x6pI6tZr80k",
       authDomain: "tango-judge-system-bykimtokki.firebaseapp.com",
       databaseURL: "https://tango-judge-system-bykimtokki-default-rtdb.firebaseio.com",
@@ -18,22 +22,35 @@
       storageBucket: "tango-judge-system-bykimtokki.firebasestorage.app",
       messagingSenderId: "728131875464",
       appId: "1:728131875464:web:c88f3c794a881d071ae53d"
+    });
+
+    var _db = firebase.database();
+
+    // React(Babel)에서 쓸 수 있도록 window에 등록
+    window.__firebaseDB = _db;
+
+    window.__fbRef = function(db, path) {
+      return db.ref(path);
     };
-    const app = initializeApp(firebaseConfig);
-    const db  = getDatabase(app);
-    window.__firebaseDB  = db;
-    window.__fbRef       = ref;
-    window.__fbSet       = set;
-    window.__fbOnValue   = onValue;
-    window.__fbGet       = get;
-    window.dispatchEvent(new Event("firebaseReady"));
+    window.__fbSet = function(ref, value) {
+      return ref.set(value);
+    };
+    window.__fbOnValue = function(ref, callback) {
+      ref.on('value', callback);
+      return function() { ref.off('value', callback); };
+    };
+    window.__fbGet = function(ref) {
+      return ref.once('value');
+    };
   </script>
+
   <style>
     @media print { nav, .no-print { display:none !important; } body { background:#fff !important; color:#000 !important; } }
   </style>
 </head>
 <body>
   <div id="root"></div>
+
   <script type="text/babel">
     const { useState, useMemo } = React;
 
@@ -2801,15 +2818,8 @@ function App() {
 
 
 
-    const mountApp = () => {
-      const root = ReactDOM.createRoot(document.getElementById('root'));
-      root.render(<App />);
-    };
-    if (window.__firebaseDB) { mountApp(); }
-    else {
-      window.addEventListener("firebaseReady", mountApp, { once: true });
-      setTimeout(()=>{ if (!window.__firebaseDB) mountApp(); }, 3000);
-    }
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
   </script>
 </body>
 </html>
