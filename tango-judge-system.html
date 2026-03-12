@@ -507,7 +507,7 @@ function Navbar({ user, view, setView, onLogout, lang, setLang, onNameClick, t }
 /* ════════════════════════════════════════════
    SETUP PANEL
 ════════════════════════════════════════════ */
-function SetupPanel({ tournament, setTournament, users, setUsers, directorLocks, setDirectorLocks, setJudgeLocks, setScores, t }) {
+function SetupPanel({ tournament, setTournament, users, setUsers, directorLocks, setDirectorLocks, setJudgeLocks, setScores, fbUpdate, t }) {
   const [selCat, setSelCat]           = useState((tournament.categories || [])[0]?.id || "");
   const [catTab, setCatTab]           = useState("basic");
   const [showAddCat, setShowAddCat]   = useState(false);
@@ -566,23 +566,29 @@ function SetupPanel({ tournament, setTournament, users, setUsers, directorLocks,
     if (!window.confirm("이 종목의 모든 채점/확정 데이터를 초기화하시겠습니까?")) return;
     const c = (tournament.categories || []).find(x => x.id === catId);
     if (!c) return;
-    updCat(catId, {
-      rounds: (c.rounds || []).map(r => ({ ...r, finalized: false, advancedIds: [], coupleIds: [] })),
-      stages: (c.stages || []).map(s => ({ ...s, finalized: false, advancedIds: [] }))
+    const newCats = (tournament.categories || []).map(cat =>
+      cat.id !== catId ? cat : {
+        ...cat,
+        rounds: (cat.rounds || []).map(r => ({ ...r, finalized: false, advancedIds: [], coupleIds: [] })),
+        stages: (cat.stages || []).map(s => ({ ...s, finalized: false, advancedIds: [] }))
+      }
+    );
+    const newTmt = { ...tournament, categories: newCats };
+    const newDl  = { ...directorLocks };
+    (c.rounds || []).forEach(r => { delete newDl[r.id]; });
+    const newScores = { ...({}) }; // scores는 별도로 처리
+    const newJl = {};
+    // atomic write — 모든 경로 한번에
+    fbUpdate({
+      tournament:    newTmt,
+      directorLocks: newDl,
+      scores:        {},
+      judgeLocks:    {}
     });
-    const dl = { ...directorLocks };
-    (c.rounds || []).forEach(r => { delete dl[r.id]; });
-    setDirectorLocks(dl);
-    setScores(prev => {
-      const n = { ...prev };
-      (c.rounds || []).forEach(r => { delete n[r.id]; });
-      return n;
-    });
-    setJudgeLocks(prev => {
-      const n = { ...prev };
-      (c.rounds || []).forEach(r => { delete n[r.id]; });
-      return n;
-    });
+    setTournament(newTmt);
+    setDirectorLocks(newDl);
+    setScores({});
+    setJudgeLocks({});
   };
 
   const addRoundToStage = (catId, stageKey, stageLabel) => {
@@ -1738,7 +1744,7 @@ function JudgeScoringPanel({ tournament, scores, setScores, currentUser, users, 
 /* ════════════════════════════════════════════
    DIRECTOR PANEL
 ════════════════════════════════════════════ */
-function DirectorPanel({ tournament, scores, setTournament, users, judgeLocks, setJudgeLocks, directorLocks, setDirectorLocks, setBroadcast, broadcast, currentUser, t }) {
+function DirectorPanel({ tournament, scores, setTournament, users, judgeLocks, setJudgeLocks, directorLocks, setDirectorLocks, setBroadcast, broadcast, currentUser, fbUpdate, t }) {
   const [selCat, setSelCat]               = useState(((tournament.categories||[])[0]||{}).id || "");
   const [selRound, setSelRound]           = useState("");
   const [showBroadcast, setShowBroadcast] = useState(false);
@@ -1823,14 +1829,20 @@ function DirectorPanel({ tournament, scores, setTournament, users, judgeLocks, s
 
   const lockRound = () => {
     if (!selectedAdv.length) return;
-    setDirectorLocks(prev => ({ ...prev, [selRound]: true }));
-    setTournament(prev => ({
-      ...prev,
-      categories: (prev.categories||[]).map(c => c.id!==selCat ? c : {
+    // 새 tournament 계산
+    const newTmt = {
+      ...tournament,
+      categories: (tournament.categories||[]).map(c => c.id!==selCat ? c : {
         ...c,
         rounds: (c.rounds||[]).map(r => r.id===selRound ? { ...r, finalized:true, advancedIds:selectedAdv } : r)
       })
-    }));
+    };
+    const newDirLocks = { ...directorLocks, [selRound]: true };
+    // atomic write — isSyncing 경쟁조건 없음
+    fbUpdate({ tournament: newTmt, directorLocks: newDirLocks });
+    // local state 동기화
+    setTournament(newTmt);
+    setDirectorLocks(newDirLocks);
     setShowLockConfirm(false); setSelectedAdv([]);
   };
 
@@ -1914,18 +1926,21 @@ function DirectorPanel({ tournament, scores, setTournament, users, judgeLocks, s
         .map((r,i) => ({ ...r, rank:i+1 }));
     }
 
-    setTournament(prev => ({
-      ...prev,
+    const newTmt = {
+      ...tournament,
       finalResults: isFinal ? {
-        ...(prev.finalResults||{}),
+        ...(tournament.finalResults||{}),
         [selCat]: { confirmed:true, confirmedAt:Date.now(), rankings:finalRankings, catName:cat2?.name||selCat }
-      } : prev.finalResults,
-      categories: (prev.categories||[]).map(c => c.id!==selCat ? c : {
+      } : (tournament.finalResults||{}),
+      categories: (tournament.categories||[]).map(c => c.id!==selCat ? c : {
         ...c,
         stages: (c.stages||[]).map(s => s.stageKey===stageKey ? { ...s, finalized:true, advancedIds:advIds } : s),
         rounds: newRounds
       })
-    }));
+    };
+    // atomic write
+    fbUpdate({ tournament: newTmt });
+    setTournament(newTmt);
     setShowStageAdv(null);
   };
 
@@ -2671,8 +2686,20 @@ function App() {
   const [editingName, setEditingName]   = useState(false);
   const [editNameVal, setEditNameVal]   = useState("");
 
-  const isSyncing = React.useRef(false);
-  const dbRef     = React.useRef(null);
+  const dbRef       = React.useRef(null);
+  const fromFb      = React.useRef(false); // Firebase에서 받은 업데이트 표시
+
+  // ── Firebase write (항상 씀 - 에코루프 없음, safeset은 raw setter만 씀) ──
+  const fbSet = React.useRef((path, value) => {
+    if (!dbRef.current) return;
+    dbRef.current.ref(path).set(value);
+  }).current;
+
+  // 여러 경로 동시 write (atomic update)
+  const fbUpdate = React.useRef((updates) => {
+    if (!dbRef.current) return;
+    dbRef.current.ref("/").update(updates);
+  }).current;
 
   // ── Firebase 구독 ──
   React.useEffect(() => {
@@ -2684,11 +2711,14 @@ function App() {
     const TOTAL = 6;
     const markReady = () => { readyCount++; if (readyCount >= TOTAL) setFbReady(true); };
 
+    // safeset: Firebase→React state 방향 (Firebase write 안 함)
     const safeset = (setter, defaultVal) => (snap) => {
-      isSyncing.current = true;
-      const v = snap.val();
-      setter(v != null ? v : defaultVal);
-      setTimeout(() => { isSyncing.current = false; }, 60);
+      fromFb.current = true;
+      const raw = snap.val();
+      // Firebase 배열→객체 변환 복원
+      const v = raw != null ? fixArrays(raw) : defaultVal;
+      setter(v);
+      setTimeout(() => { fromFb.current = false; }, 80);
       markReady();
     };
 
@@ -2715,7 +2745,7 @@ function App() {
     });
 
     // 5초 타임아웃
-    const timer = setTimeout(() => { if (!fbReady) setFbReady(true); }, 5000);
+    const timer = setTimeout(() => { setFbReady(true); }, 5000);
 
     return () => {
       refs.forEach(r => r.off("value"));
@@ -2723,17 +2753,17 @@ function App() {
     };
   }, []);
 
-  // ── Firebase write ──
-  const fbSet = (path, value) => {
-    if (!dbRef.current) return;
-    dbRef.current.ref(path).set(value);
-  };
-
+  // ── mkSynced: 항상 Firebase write (isSyncing 제거 — 루프 없음)
+  //    이유: safeset은 raw setter만 호출하므로 mkSynced를 거치지 않음
   const mkSynced = (setter, path) => (updater) => {
+    let next;
     setter(prev => {
-      const next = typeof updater === "function" ? updater(prev) : updater;
-      if (!isSyncing.current) fbSet(path, next);
+      next = typeof updater === "function" ? updater(prev) : updater;
       return next;
+    });
+    // React 배칭 후 실제 값으로 write (microtask로 지연)
+    Promise.resolve().then(() => {
+      if (next !== undefined) fbSet(path, next);
     });
   };
 
@@ -2745,7 +2775,7 @@ function App() {
 
   const syncedSetBroadcast = (val) => {
     setBroadcast(val);
-    if (!isSyncing.current) fbSet("broadcast", val);
+    fbSet("broadcast", val);
   };
 
   // ── 로그인 ──
@@ -2823,10 +2853,10 @@ function App() {
           )}
 
           <div style={{ paddingBottom:"64px" }}>
-            {view==="setup"    && <SetupPanel tournament={tournament} setTournament={syncedSetTournament} users={users} setUsers={syncedSetUsers} directorLocks={directorLocks} setDirectorLocks={syncedSetDirectorLocks} setJudgeLocks={syncedSetJudgeLocks} setScores={syncedSetScores} t={t} />}
+            {view==="setup"    && <SetupPanel tournament={tournament} setTournament={syncedSetTournament} users={users} setUsers={syncedSetUsers} directorLocks={directorLocks} setDirectorLocks={syncedSetDirectorLocks} setJudgeLocks={syncedSetJudgeLocks} setScores={syncedSetScores} fbUpdate={fbUpdate} t={t} />}
             {view==="pmgmt"    && <ParticipantMgmtPanel tournament={tournament} setTournament={syncedSetTournament} t={t} />}
             {view==="scoring"  && <JudgeScoringPanel tournament={tournament} scores={scores} setScores={syncedSetScores} currentUser={currentUser} users={users} judgeLocks={judgeLocks} setJudgeLocks={syncedSetJudgeLocks} directorLocks={directorLocks} broadcast={broadcast} t={t} />}
-            {view==="director" && <DirectorPanel tournament={tournament} scores={scores} setTournament={syncedSetTournament} users={users} judgeLocks={judgeLocks} setJudgeLocks={syncedSetJudgeLocks} directorLocks={directorLocks} setDirectorLocks={syncedSetDirectorLocks} setBroadcast={syncedSetBroadcast} broadcast={broadcast} currentUser={currentUser} t={t} />}
+            {view==="director" && <DirectorPanel tournament={tournament} scores={scores} setTournament={syncedSetTournament} users={users} judgeLocks={judgeLocks} setJudgeLocks={syncedSetJudgeLocks} directorLocks={directorLocks} setDirectorLocks={syncedSetDirectorLocks} setBroadcast={syncedSetBroadcast} broadcast={broadcast} currentUser={currentUser} fbUpdate={fbUpdate} t={t} />}
             {view==="live"     && <LivePanel tournament={tournament} scores={scores} users={users} t={t} />}
             {view==="export"   && <ExportPanel tournament={tournament} scores={scores} users={users} t={t} />}
           </div>
