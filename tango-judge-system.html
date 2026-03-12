@@ -1776,8 +1776,9 @@ function DirectorPanel({ tournament, scores, setTournament, users, judgeLocks, s
   const curStageKey    = round?.stageKey;
   const curStage       = curStageKey ? (cat?.stages||[]).find(s => s.stageKey === curStageKey) : null;
   const curStageRounds = (cat?.rounds||[]).filter(r => r.stageKey === curStageKey);
+  // 모든 론다가 감독관 확정됐고 아직 스테이지 자체는 확정 전
   const allStageLocked = curStageRounds.length > 0 &&
-    curStageRounds.every(r => directorLocks?.[r.id]) && !curStage?.finalized;
+    curStageRounds.every(r => directorLocks?.[r.id] || r.finalized) && !curStage?.finalized;
 
   // 스테이지 어드밴스 모달 계산
   const advStage      = (cat?.stages||[]).find(s => s.stageKey === showStageAdv);
@@ -1785,21 +1786,40 @@ function DirectorPanel({ tournament, scores, setTournament, users, judgeLocks, s
   const nextStageLabel = nextStageKey ? ((cat?.stages||[]).find(s => s.stageKey === nextStageKey) || {}).label || "" : null;
   const nextStageRounds = nextStageKey ? (cat?.rounds||[]).filter(r => r.stageKey === nextStageKey) : [];
 
+  // Firebase는 배열을 객체로 반환하는 경우가 있어서 양쪽 처리
+  const toArr = (v) => {
+    if (!v) return [];
+    if (Array.isArray(v)) return v;
+    if (typeof v === "object") return Object.values(v);
+    return [];
+  };
+  // 라운드 확정 여부: r.finalized 또는 directorLocks 중 하나라도 true
+  const isRFin = (r) => !!(r && (r.finalized || directorLocks?.[r.id]));
+
   const stageAdvancers = useMemo(() => {
     if (!showStageAdv || !cat) return [];
-    const ids = new Set(
-      (cat.rounds||[]).filter(r => r.stageKey === showStageAdv && r.finalized)
-        .flatMap(r => r.advancedIds||[])
-    );
-    const ps = [...ids].map(id => (tournament.participants||[]).find(p => p.id === id)).filter(Boolean);
-    return ps.sort((a, b) => {
-      const rsA = (cat.rounds||[]).filter(r => r.stageKey===showStageAdv && (r.coupleIds||[]).includes(a.id) && r.finalized);
-      const rsB = (cat.rounds||[]).filter(r => r.stageKey===showStageAdv && (r.coupleIds||[]).includes(b.id) && r.finalized);
-      const avA = rsA.length ? rsA.map(r => calcCoupleAvg(scores,r.id,a.id,judgeUsers,cat.scoringType,cat.criteria,avgMode)||0).reduce((x,y)=>x+y,0)/rsA.length : 0;
-      const avB = rsB.length ? rsB.map(r => calcCoupleAvg(scores,r.id,b.id,judgeUsers,cat.scoringType,cat.criteria,avgMode)||0).reduce((x,y)=>x+y,0)/rsB.length : 0;
-      return avB - avA;
-    });
-  }, [showStageAdv, cat, tournament.participants, scores]);
+    try {
+      const ids = new Set(
+        (cat.rounds||[])
+          .filter(r => r.stageKey === showStageAdv && isRFin(r))
+          .flatMap(r => toArr(r.advancedIds))
+          .filter(Boolean)
+      );
+      const ps = [...ids].map(id => (tournament.participants||[]).find(p => p.id===id)).filter(Boolean);
+      return ps.sort((a, b) => {
+        try {
+          const rsA = (cat.rounds||[]).filter(r => r.stageKey===showStageAdv && isRFin(r) && toArr(r.coupleIds).includes(a.id));
+          const rsB = (cat.rounds||[]).filter(r => r.stageKey===showStageAdv && isRFin(r) && toArr(r.coupleIds).includes(b.id));
+          const avA = rsA.length ? rsA.map(r => calcCoupleAvg(scores,r.id,a.id,judgeUsers,cat.scoringType,cat.criteria,avgMode)||0).reduce((x,y)=>x+y,0)/rsA.length : 0;
+          const avB = rsB.length ? rsB.map(r => calcCoupleAvg(scores,r.id,b.id,judgeUsers,cat.scoringType,cat.criteria,avgMode)||0).reduce((x,y)=>x+y,0)/rsB.length : 0;
+          return avB - avA;
+        } catch(e) { return 0; }
+      });
+    } catch(e) {
+      console.error("stageAdvancers error:", e);
+      return [];
+    }
+  }, [showStageAdv, cat, tournament.participants, scores, directorLocks]);
 
   const lockRound = () => {
     if (!selectedAdv.length) return;
@@ -1835,9 +1855,23 @@ function DirectorPanel({ tournament, scores, setTournament, users, judgeLocks, s
 
   const confirmStageAdv = (stageKey, distMode) => {
     const cat2 = (tournament.categories||[]).find(c => c.id===selCat);
+    const toArrL = (v) => {
+      if (!v) return [];
+      if (Array.isArray(v)) return v;
+      if (typeof v === "object") return Object.values(v);
+      return [];
+    };
     const advIds = [...new Set(
-      (cat2?.rounds||[]).filter(r => r.stageKey===stageKey && r.finalized).flatMap(r => r.advancedIds||[])
+      (cat2?.rounds||[])
+        .filter(r => r.stageKey===stageKey && (r.finalized || directorLocks?.[r.id]))
+        .flatMap(r => toArrL(r.advancedIds))
+        .filter(Boolean)
     )];
+    if (!advIds.length) {
+      alert("진출자가 없습니다. 각 론다 확정 시 진출자를 선택해야 합니다.");
+      setShowStageAdv(null);
+      return;
+    }
 
     const nsk = cat2 ? getNextStageKey(cat2, stageKey) : null;
     let newRounds = cat2?.rounds||[];
@@ -1868,11 +1902,11 @@ function DirectorPanel({ tournament, scores, setTournament, users, judgeLocks, s
     const isFinal = !nsk;
     let finalRankings = [];
     if (isFinal) {
-      const finalRs = (cat2?.rounds||[]).filter(r => r.stageKey===stageKey && r.finalized);
-      const finalIds = [...new Set(finalRs.flatMap(r => r.advancedIds||[]))];
+      const finalRs = (cat2?.rounds||[]).filter(r => r.stageKey===stageKey && (r.finalized || directorLocks?.[r.id]));
+      const finalIds = [...new Set(finalRs.flatMap(r => toArrL(r.advancedIds)).filter(Boolean))];
       finalRankings = finalIds.map(pid => {
         const p = (tournament.participants||[]).find(x => x.id===pid);
-        const rs = finalRs.filter(r => (r.coupleIds||[]).includes(pid));
+        const rs = finalRs.filter(r => toArrL(r.coupleIds).includes(pid));
         const avgs = rs.map(r => calcCoupleAvg(scores,r.id,pid,judgeUsers,cat2?.scoringType,cat2?.criteria,avgMode)).filter(v=>v!=null);
         const avg = avgs.length ? avgs.reduce((a,b)=>a+b,0)/avgs.length : null;
         return { pid, number:p?.number||"?", nickname:p?.nickname||"", avg };
@@ -2154,7 +2188,7 @@ function DirectorPanel({ tournament, scores, setTournament, users, judgeLocks, s
               {stageAdvancers.length === 0
                 ? <p style={{ fontSize:"12px", color:"var(--red2)" }}>⚠ 론다 확정 시 진출자를 선택해야 합니다.</p>
                 : stageAdvancers.map((p, idx) => {
-                    const rs = (cat?.rounds||[]).filter(r => r.stageKey===showStageAdv && (r.coupleIds||[]).includes(p.id) && r.finalized);
+                    const rs = (cat?.rounds||[]).filter(r => r.stageKey===showStageAdv && isRFin(r) && toArr(r.coupleIds).includes(p.id));
                     const avgs = rs.map(r => calcCoupleAvg(scores,r.id,p.id,judgeUsers,cat?.scoringType,cat?.criteria,avgMode)).filter(v=>v!=null);
                     const av = avgs.length ? avgs.reduce((a,b)=>a+b,0)/avgs.length : null;
                     const fromR = (cat?.rounds||[]).find(r => r.stageKey===showStageAdv && (r.advancedIds||[]).includes(p.id));
