@@ -98,7 +98,7 @@ const TR = {
     score:"점수", avgScore:"평균", diff:"차이", memo:"메모",
     memoPlaceholder:"메모 입력", submitAll:"전체 제출", submitted:"제출완료",
     rank:"순위", avg:"평균", finalized:"확정", advancing:"진출",
-    maleShort:"남", femaleShort:"여", blurOpposite:"상대 성별 흐리게",
+    maleShort:"리더", femaleShort:"팔로워", couple:"커플", filterAll:"전체", filterMale:"리더만", filterFemale:"팔로워만",
     selectRound:"론다선택", liveTitle:"라이브 채점",
   },
   en: {
@@ -111,7 +111,7 @@ const TR = {
     score:"Score", avgScore:"Average", diff:"Diff", memo:"Memo",
     memoPlaceholder:"Enter memo", submitAll:"Submit All", submitted:"Submitted",
     rank:"Rank", avg:"Avg", finalized:"Finalized", advancing:"Advancing",
-    maleShort:"M", femaleShort:"F", blurOpposite:"Blur opposite gender",
+    maleShort:"Leader", femaleShort:"Follower", couple:"Couple", filterAll:"All", filterMale:"Leaders", filterFemale:"Followers",
     selectRound:"Select Round", liveTitle:"Live Scoring",
   },
   es: {
@@ -124,7 +124,7 @@ const TR = {
     score:"Puntos", avgScore:"Promedio", diff:"Dif.", memo:"Nota",
     memoPlaceholder:"Escribir nota", submitAll:"Enviar Todo", submitted:"Enviado",
     rank:"Pos.", avg:"Prom.", finalized:"Finalizado", advancing:"Avanzando",
-    maleShort:"H", femaleShort:"M", blurOpposite:"Ocultar género opuesto",
+    maleShort:"Líder", femaleShort:"Seguidor", couple:"Pareja", filterAll:"Todo", filterMale:"Solo Líderes", filterFemale:"Solo Seguidores",
     selectRound:"Seleccionar Ronda", liveTitle:"Puntuación en Vivo",
   },
   ja: {
@@ -137,7 +137,7 @@ const TR = {
     score:"点数", avgScore:"平均", diff:"差", memo:"メモ",
     memoPlaceholder:"メモ入力", submitAll:"全て提出", submitted:"提出済",
     rank:"順位", avg:"平均", finalized:"確定", advancing:"進出",
-    maleShort:"男", femaleShort:"女", blurOpposite:"相手の性別をぼかす",
+    maleShort:"リーダー", femaleShort:"フォロワー", couple:"カップル", filterAll:"全員", filterMale:"リーダーのみ", filterFemale:"フォロワーのみ",
     selectRound:"ラウンド選択", liveTitle:"ライブ採点",
   },
   zh: {
@@ -150,8 +150,21 @@ const TR = {
     score:"分数", avgScore:"平均", diff:"差值", memo:"备注",
     memoPlaceholder:"输入备注", submitAll:"全部提交", submitted:"已提交",
     rank:"排名", avg:"均", finalized:"已确定", advancing:"晋级",
-    maleShort:"男", femaleShort:"女", blurOpposite:"模糊对方性别",
+    maleShort:"领导", femaleShort:"跟随", couple:"情侣", filterAll:"全部", filterMale:"仅领导", filterFemale:"仅跟随",
     selectRound:"选择轮次", liveTitle:"实时评分",
+  },
+  "zh-TW": {
+    appTitle:"探戈裁判系統", login:"登入", password:"密碼",
+    wrongPw:"密碼錯誤", namePlaceholder:"輸入顯示名稱",
+    confirm:"確認", cancel:"取消", save:"儲存",
+    setup:"賽事設定", pmgmt:"參賽者", scoring:"評分",
+    director:"總監", live:"即時", export:"匯出", logout:"登出",
+    entryNo:"號碼", nickname:"姓名", gender:"性別",
+    score:"分數", avgScore:"平均", diff:"差值", memo:"備註",
+    memoPlaceholder:"輸入備註", submitAll:"全部提交", submitted:"已提交",
+    rank:"排名", avg:"均", finalized:"已確定", advancing:"晉級",
+    maleShort:"領舞", femaleShort:"跟舞", couple:"伴侶", filterAll:"全部", filterMale:"僅領舞", filterFemale:"僅跟舞",
+    selectRound:"選擇輪次", liveTitle:"即時評分",
   },
 };
 
@@ -464,7 +477,7 @@ function LoginScreen({ users, onLogin, lang, setLang, t }) {
 
       <div className="card" style={{ width:"100%", maxWidth:"360px", display:"flex", flexDirection:"column", gap:"14px" }}>
         <div style={{ display:"flex", gap:"5px", justifyContent:"center", flexWrap:"wrap" }}>
-          {[["ko","한국어"],["en","EN"],["es","ES"],["ja","日本語"],["zh","中文"]].map(([l, lbl]) => (
+          {[["ko","한국어"],["en","EN"],["es","ES"],["ja","日本語"],["zh","中文(简)"],["zh-TW","中文(繁)"]].map(([l, lbl]) => (
             <button key={l} className={`pill-tab ${lang===l?"active":""}`}
               onClick={() => setLang(l)} style={{ fontSize:"11px", padding:"3px 10px" }}>
               {lbl}
@@ -562,7 +575,8 @@ function Navbar({ user, view, setView, onLogout, lang, setLang, onNameClick, t }
           <option value="en">EN</option>
           <option value="es">ES</option>
           <option value="ja">日本語</option>
-          <option value="zh">中文</option>
+          <option value="zh">中文(简)</option>
+          <option value="zh-TW">中文(繁)</option>
         </select>
         <button className="btn btn-ghost btn-sm" onClick={onNameClick}
           style={{ fontSize:"11px", color:"var(--gold)" }}>
@@ -1460,9 +1474,9 @@ function ParticipantMgmtPanel({ tournament, setTournament, t }) {
                 <input type="number" value={bulkTo} onChange={e => setBulkTo(e.target.value)} placeholder="끝번호" style={{ width:"90px" }} />
                 <input value={bulkPrefix} onChange={e => setBulkPrefix(e.target.value)} placeholder="접두사(선택)" style={{ width:"110px" }} />
                 <select value={bulkGender} onChange={e => setBulkGender(e.target.value)} style={{ width:"auto", padding:"7px 10px" }}>
-                  <option value="couple">커플</option>
-                  <option value="male">남(리더)</option>
-                  <option value="female">여(팔로워)</option>
+                  <option value="couple">{t("couple")}</option>
+                  <option value="male">{t("maleShort")}</option>
+                  <option value="female">{t("femaleShort")}</option>
                 </select>
                 <button className="btn btn-gold btn-sm" onClick={bulkGenerate} disabled={!bulkFrom||!bulkTo}>
                   ⚡ {bulkFrom&&bulkTo ? `${bulkFrom}~${bulkTo} 생성` : "생성"}
@@ -1525,12 +1539,10 @@ function ParticipantMgmtPanel({ tournament, setTournament, t }) {
                       <td>
                         {isEditing
                           ? <select value={editGender} onChange={e => setEditGender(e.target.value)} style={{ padding:"4px 6px", fontSize:"12px", width:"auto" }}>
-                              <option value="couple">커플</option>
-                              <option value="male">남</option>
-                              <option value="female">여</option>
+                              {[["couple","couple"],["male","male"],["female","female"]].map(([v])=><option key={v} value={v}>{v==="couple"?t("couple"):v==="male"?t("maleShort"):t("femaleShort")}</option>)}
                             </select>
                           : <span className={`tag ${p.gender==="male"?"tag-muted":p.gender==="female"?"tag-red":"tag-gold"}`} style={{ fontSize:"10px" }}>
-                              {p.gender==="male"?"남":p.gender==="female"?"여":"커플"}
+                              {p.gender==="male"?t("maleShort"):p.gender==="female"?t("femaleShort"):t("couple")}
                             </span>
                         }
                       </td>
@@ -1574,9 +1586,7 @@ function ParticipantMgmtPanel({ tournament, setTournament, t }) {
             <input value={newNick} onChange={e => setNewNick(e.target.value)} placeholder="닉네임" style={{ flex:1, minWidth:"120px" }}
               onKeyDown={e => e.key==="Enter"&&addP()} />
             <select value={newGender} onChange={e => setNewGender(e.target.value)} style={{ padding:"7px 10px", width:"auto" }}>
-              <option value="couple">커플</option>
-              <option value="male">남</option>
-              <option value="female">여</option>
+              {[["couple","couple"],["male","male"],["female","female"]].map(([v])=><option key={v} value={v}>{v==="couple"?t("couple"):v==="male"?t("maleShort"):t("femaleShort")}</option>)}
             </select>
             <button className="btn btn-ghost btn-sm" style={{ borderColor:"var(--gold)", color:"var(--gold)" }} onClick={addP}>+ 추가</button>
           </div>
@@ -1660,55 +1670,58 @@ function ParticipantMgmtPanel({ tournament, setTournament, t }) {
 
 
 /* ════════════════════════════════════════════
-   MEMO CELL — 한글 IME 완전 해결 버전
-   defaultValue + ref 기반으로 React 렌더링과 분리
+   MEMO CELL — IME 최종 해결
+   핵심 전략:
+   1. uncontrolled (defaultValue+ref) → React 렌더링이 DOM 건드리지 않음
+   2. 포커스 중 외부 값 변화 무시
+   3. 점수 input은 inputMode="decimal" → 브라우저 IME 전환 최소화
 ════════════════════════════════════════════ */
-function MemoCell({ value, onChange, disabled, placeholder }) {
+function MemoCell({ value, onChange, disabled, placeholder, lang }) {
   const ref         = React.useRef(null);
-  const isFocused   = React.useRef(false);
-  const isComposing = React.useRef(false);
-  const committed   = React.useRef(value || "");
+  const focused     = React.useRef(false);
+  const composing   = React.useRef(false);
+  const lastVal     = React.useRef(value || "");
 
-  // 마운트 시 초기값
+  // 마운트 시 초기값 설정 (한 번만)
   React.useEffect(() => {
-    if (ref.current) ref.current.value = value || "";
-    committed.current = value || "";
-  }, []);
-
-  // 외부 value 변화 → 포커스 중이 아닐 때만 반영
-  React.useEffect(() => {
-    if (ref.current && !isFocused.current) {
+    if (ref.current) {
       ref.current.value = value || "";
-      committed.current = value || "";
+      lastVal.current   = value || "";
+    }
+  }, []); // eslint-disable-line
+
+  // 외부 값이 바뀔 때: 포커스 중이 아닐 때만 DOM 업데이트
+  React.useEffect(() => {
+    if (ref.current && !focused.current) {
+      const incoming = value || "";
+      if (incoming !== lastVal.current) {
+        ref.current.value = incoming;
+        lastVal.current   = incoming;
+      }
     }
   }, [value]);
+
+  const commit = (v) => {
+    if (v !== lastVal.current) {
+      lastVal.current = v;
+      onChange(v);
+    }
+  };
 
   return (
     <textarea
       ref={ref}
+
       rows={2}
       disabled={disabled}
       placeholder={placeholder}
+      lang={lang}
       style={{ width:"100%", minWidth:"150px", resize:"vertical", fontSize:"12px" }}
-      onFocus={() => { isFocused.current = true; }}
-      onBlur={() => {
-        isFocused.current = false;
-        isComposing.current = false;
-        const v = ref.current ? ref.current.value : "";
-        if (v !== committed.current) { committed.current = v; onChange(v); }
-      }}
-      onCompositionStart={() => { isComposing.current = true; }}
-      onCompositionEnd={e => {
-        isComposing.current = false;
-        const v = e.target.value;
-        committed.current = v; onChange(v);
-      }}
-      onChange={e => {
-        if (!isComposing.current) {
-          const v = e.target.value;
-          committed.current = v; onChange(v);
-        }
-      }}
+      onFocus={()      => { focused.current = true; }}
+      onBlur={e        => { focused.current = false; composing.current = false; commit(e.target.value); }}
+      onCompositionStart={() => { composing.current = true; }}
+      onCompositionEnd={e => { composing.current = false; commit(e.target.value); }}
+      onChange={e      => { if (!composing.current) commit(e.target.value); }}
     />
   );
 }
@@ -1716,7 +1729,7 @@ function MemoCell({ value, onChange, disabled, placeholder }) {
 /* ════════════════════════════════════════════
    JUDGE SCORING PANEL
 ════════════════════════════════════════════ */
-function JudgeScoringPanel({ tournament, scores, setScores, currentUser, users, judgeLocks, setJudgeLocks, directorLocks, broadcast, t }) {
+function JudgeScoringPanel({ tournament, scores, setScores, currentUser, users, judgeLocks, setJudgeLocks, directorLocks, broadcast, lang, t }) {
   const [selCat, setSelCat]         = useState(((tournament.categories||[])[0]||{}).id || "");
   const [selRound, setSelRound]     = useState("");
   const [localScores, setLocalScores] = useState({});
@@ -1801,7 +1814,7 @@ function JudgeScoringPanel({ tournament, scores, setScores, currentUser, users, 
           {isJJ && (
             <div style={{ display:"flex", alignItems:"center", gap:"5px", marginLeft:"10px" }}>
               <span style={{ fontSize:"11px", color:"var(--muted)" }}>심사 대상:</span>
-              {[["all","전체"],["male","남자만"],["female","여자만"]].map(([v,lbl]) => (
+              {[["all",t("filterAll")],["male",t("filterMale")],["female",t("filterFemale")]].map(([v,lbl]) => (
                 <button key={v} onClick={() => setGenderFilter(v)}
                   style={{ padding:"3px 10px", borderRadius:"20px", fontSize:"11px", fontWeight:600, cursor:"pointer",
                     border:"1px solid var(--border)",
@@ -1899,6 +1912,7 @@ function JudgeScoringPanel({ tournament, scores, setScores, currentUser, users, 
                           onChange={v => setMemo(p.id, v)}
                           disabled={disabled}
                           placeholder={t("memoPlaceholder")}
+                          lang={lang==="ko"?"ko":lang==="ja"?"ja":lang==="zh"?"zh":lang==="zh-TW"?"zh-TW":undefined}
                         />
                       </td>
                       {criteria.length > 0
@@ -1907,7 +1921,7 @@ function JudgeScoringPanel({ tournament, scores, setScores, currentUser, users, 
                               <input type="number" min={0} max={10} step={0.5}
                                 value={entry.criteria?.[k] ?? ""} disabled={disabled}
                                 onChange={e => setCrit(p.id, k, e.target.value)}
-                                className="score-input" placeholder="–" />
+                                className="score-input" placeholder="–" inputMode="decimal" />
                             </td>
                           ))
                         : (
@@ -1915,7 +1929,7 @@ function JudgeScoringPanel({ tournament, scores, setScores, currentUser, users, 
                             <input type="number" min={0} max={10} step={0.5}
                               value={entry.simple ?? ""} disabled={disabled}
                               onChange={e => setSimple(p.id, e.target.value)}
-                              className="score-input" placeholder="–" />
+                              className="score-input" placeholder="–" inputMode="decimal" />
                           </td>
                         )
                       }
@@ -3072,7 +3086,7 @@ function App() {
           <div style={{ paddingBottom:"64px" }}>
             {view==="setup"    && <SetupPanel tournament={tournament} setTournament={syncedSetTournament} users={users} setUsers={syncedSetUsers} directorLocks={directorLocks} setDirectorLocks={syncedSetDirectorLocks} setJudgeLocks={syncedSetJudgeLocks} setScores={syncedSetScores} fbUpdate={fbUpdate} t={t} />}
             {view==="pmgmt"    && <ParticipantMgmtPanel tournament={tournament} setTournament={syncedSetTournament} t={t} />}
-            {view==="scoring"  && <JudgeScoringPanel tournament={tournament} scores={scores} setScores={syncedSetScores} currentUser={currentUser} users={users} judgeLocks={judgeLocks} setJudgeLocks={syncedSetJudgeLocks} directorLocks={directorLocks} broadcast={broadcast} t={t} />}
+            {view==="scoring"  && <JudgeScoringPanel tournament={tournament} scores={scores} setScores={syncedSetScores} currentUser={currentUser} users={users} judgeLocks={judgeLocks} setJudgeLocks={syncedSetJudgeLocks} directorLocks={directorLocks} broadcast={broadcast} lang={lang} t={t} />}
             {view==="director" && <DirectorPanel tournament={tournament} scores={scores} setTournament={syncedSetTournament} users={users} judgeLocks={judgeLocks} setJudgeLocks={syncedSetJudgeLocks} directorLocks={directorLocks} setDirectorLocks={syncedSetDirectorLocks} setBroadcast={syncedSetBroadcast} broadcast={broadcast} currentUser={currentUser} fbUpdate={fbUpdate} t={t} />}
             {view==="live"     && <LivePanel tournament={tournament} scores={scores} users={users} t={t} />}
             {view==="export"   && <ExportPanel tournament={tournament} scores={scores} users={users} t={t} />}
