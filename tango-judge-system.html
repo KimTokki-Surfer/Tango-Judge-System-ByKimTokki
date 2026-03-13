@@ -191,7 +191,8 @@ const mkStages = (count) =>
 const mkCat = (name, type, scoringType, stageCount, ps) => ({
   id: uid(), name, type, scoringType,
   criteria: ["음악성", "예술성", "커넥션", "테크닉"],
-  scoringAvgMode: "normal",   // "normal" | "trimmed"
+  scoringAvgMode:  "normal",    // "normal" | "trimmed"
+  scoringCalcMode: "average",   // "average" | "sum"
   stageCount: stageCount || 3,
   participantIds: ps.map(p => p.id),
   stages: mkStages(stageCount || 3),
@@ -238,7 +239,7 @@ const INIT_USERS = [
 /* ════════════════════════════════════════════
    UTILITY FUNCTIONS
 ════════════════════════════════════════════ */
-function calcEntryScore(entry, scoringType, criteriaKeys) {
+function calcEntryScore(entry, scoringType, criteriaKeys, calcMode) {
   if (!entry) return null;
   if (scoringType === "simple") {
     return entry.simple != null ? Number(entry.simple) : null;
@@ -249,13 +250,15 @@ function calcEntryScore(entry, scoringType, criteriaKeys) {
     .filter(v => v != null && v !== "")
     .map(Number);
   if (!vals.length) return null;
-  return vals.reduce((a, b) => a + b, 0) / vals.length;
+  const sum = vals.reduce((a, b) => a + b, 0);
+  // calcMode: "sum" = 합산, "average" = 평균(기본)
+  return calcMode === "sum" ? sum : sum / vals.length;
 }
 
-function calcCoupleAvg(scores, roundId, coupleId, judgeUsers, scoringType, criteriaKeys, avgMode) {
+function calcCoupleAvg(scores, roundId, coupleId, judgeUsers, scoringType, criteriaKeys, avgMode, calcMode) {
   if (!scores || !scores[roundId]) return null;
   const vals = judgeUsers
-    .map(j => calcEntryScore(scores[roundId]?.[j.id]?.[coupleId], scoringType, criteriaKeys))
+    .map(j => calcEntryScore(scores[roundId]?.[j.id]?.[coupleId], scoringType, criteriaKeys, calcMode))
     .filter(v => v != null);
   if (!vals.length) return null;
 
@@ -359,6 +362,56 @@ class ErrorBoundary extends React.Component {
     }
     return this.props.children;
   }
+}
+
+/* ════════════════════════════════════════════
+   STAGE ELIGIBLE HELPERS
+════════════════════════════════════════════ */
+// 특정 스테이지에 배치 가능한 참가자 목록
+// prelim: 종목 전체 참가자
+// 이후: 이전 스테이지 확정 진출자
+function getEligibleForStage(cat, stageKey, tournament, directorLocks) {
+  if (!cat) return [];
+  const stages  = cat.stages || [];
+  const stageIdx = stages.findIndex(s => s.stageKey === stageKey);
+  if (stageIdx <= 0) {
+    // 첫 번째 스테이지 = 종목 전체 참가자
+    return getCatParticipants(tournament, cat.id);
+  }
+  // 이전 스테이지의 advancedIds 수집
+  const prevStage = stages[stageIdx - 1];
+  const toArr = (v) => {
+    if (!v) return [];
+    if (Array.isArray(v)) return v;
+    if (typeof v === "object") return Object.values(v);
+    return [];
+  };
+  const prevRounds = (cat.rounds || []).filter(r =>
+    r.stageKey === prevStage.stageKey &&
+    (r.finalized || (directorLocks && directorLocks[r.id]))
+  );
+  const advIds = new Set(prevRounds.flatMap(r => toArr(r.advancedIds)).filter(Boolean));
+  if (!advIds.size) return [];
+  return [...advIds].map(id => (tournament.participants||[]).find(p => p.id===id)).filter(Boolean);
+}
+
+// 첫 스테이지에서 종목 배정 참가자 중 어떤 론다에도 없는 참가자 찾기
+function findUnassignedParticipants(cat, stageKey, tournament) {
+  if (!cat) return [];
+  const stages = cat.stages || [];
+  const stageIdx = stages.findIndex(s => s.stageKey === stageKey);
+  // 첫 스테이지만 체크
+  if (stageIdx !== 0) return [];
+  const stageRounds = (cat.rounds || []).filter(r => r.stageKey === stageKey);
+  if (!stageRounds.length) return [];
+  const allAssigned = new Set(stageRounds.flatMap(r => {
+    const v = r.coupleIds;
+    if (!v) return [];
+    if (Array.isArray(v)) return v;
+    if (typeof v === "object") return Object.values(v);
+    return [];
+  }));
+  return getCatParticipants(tournament, cat.id).filter(p => !allAssigned.has(p.id));
 }
 
 
@@ -627,7 +680,12 @@ function SetupPanel({ tournament, setTournament, users, setUsers, directorLocks,
     if (!c) return;
     const stageRounds = (c.rounds || []).filter(r => r.stageKey === stageKey);
     if (!stageRounds.length) return;
-    let pool = getCatParticipants(tournament, catId);
+    // 첫 스테이지면 전체 참가자, 이후면 이전 스테이지 진출자만
+    let pool = getEligibleForStage(c, stageKey, tournament, directorLocks);
+    if (!pool.length) {
+      alert("배치 가능한 참가자가 없습니다. 이전 스테이지 진출자가 확정되어야 합니다.");
+      return;
+    }
     if (mode === "random") {
       for (let i = pool.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
@@ -961,15 +1019,38 @@ function SetupPanel({ tournament, setTournament, users, setUsers, directorLocks,
                   </div>
                 </div>
 
-                {/* 평균 계산 방식 */}
+                {/* 점수 계산 방식 */}
+                {cat.scoringType === "detailed" && (
+                  <div>
+                    <label style={{ fontSize:"12px", color:"var(--muted)", display:"block", marginBottom:"6px" }}>항목별 점수 계산</label>
+                    <div style={{ display:"flex", gap:"8px", flexWrap:"wrap" }}>
+                      {[["average","평균점수 (항목 합산÷항목수)"],["sum","합산점수 (항목 합계)"]].map(([v, lbl]) => (
+                        <label key={v} style={{ display:"flex", alignItems:"center", gap:"7px", cursor:"pointer", padding:"6px 12px", borderRadius:"8px",
+                          background: (cat.scoringCalcMode||"average") === v ? "rgba(52,152,219,.12)" : "var(--bg3)",
+                          border:"1px solid "+((cat.scoringCalcMode||"average") === v ? "var(--blue)" : "var(--border)") }}>
+                          <input type="radio" checked={(cat.scoringCalcMode||"average") === v}
+                            onChange={() => updCat(cat.id, { scoringCalcMode: v })} />
+                          <span style={{ fontSize:"12px" }}>{lbl}</span>
+                        </label>
+                      ))}
+                    </div>
+                    <p style={{ fontSize:"11px", color:"var(--muted)", marginTop:"5px" }}>
+                      {(cat.scoringCalcMode||"average")==="sum"
+                        ? `예: 4개 항목 각 8점 → 심판 점수 32점 (합계)`
+                        : `예: 4개 항목 각 8점 → 심판 점수 8.00점 (평균)`}
+                    </p>
+                  </div>
+                )}
+
+                {/* 심판간 평균 계산 방식 */}
                 <div>
-                  <label style={{ fontSize:"12px", color:"var(--muted)", display:"block", marginBottom:"6px" }}>평균 계산 방식</label>
+                  <label style={{ fontSize:"12px", color:"var(--muted)", display:"block", marginBottom:"6px" }}>심판간 평균 계산</label>
                   <div style={{ display:"flex", gap:"8px", flexWrap:"wrap" }}>
-                    {[["normal","일반 평균 (전체 심판 합산)"],["trimmed","절사 평균 (최고·최저 제외, 3명 이상)"]].map(([v, lbl]) => (
+                    {[["normal","일반 평균 (전체 심판)"],["trimmed","절사 평균 (최고·최저 제외, 3명 이상)"]].map(([v, lbl]) => (
                       <label key={v} style={{ display:"flex", alignItems:"center", gap:"7px", cursor:"pointer", padding:"6px 12px", borderRadius:"8px",
-                        background: cat.scoringAvgMode === v ? "rgba(201,168,76,.12)" : "var(--bg3)",
-                        border:"1px solid "+(cat.scoringAvgMode === v ? "var(--gold)" : "var(--border)") }}>
-                        <input type="radio" checked={cat.scoringAvgMode === v}
+                        background: (cat.scoringAvgMode||"normal") === v ? "rgba(201,168,76,.12)" : "var(--bg3)",
+                        border:"1px solid "+((cat.scoringAvgMode||"normal") === v ? "var(--gold)" : "var(--border)") }}>
+                        <input type="radio" checked={(cat.scoringAvgMode||"normal") === v}
                           onChange={() => updCat(cat.id, { scoringAvgMode: v })} />
                         <span style={{ fontSize:"12px" }}>{lbl}</span>
                       </label>
@@ -1040,6 +1121,17 @@ function SetupPanel({ tournament, setTournament, users, setUsers, directorLocks,
 
                   return (
                     <div key={stage.stageKey}>
+                      {/* 미배치 참가자 경고 */}
+                      {(() => {
+                        const unassigned = findUnassignedParticipants(cat, stage.stageKey, tournament);
+                        if (!unassigned.length || stage.finalized) return null;
+                        return (
+                          <div style={{ background:"rgba(230,126,34,.1)", border:"1px solid var(--warn)", borderRadius:"8px", padding:"8px 12px", marginBottom:"8px", fontSize:"12px", color:"var(--warn)" }}>
+                            ⚠ 아직 론다에 배치되지 않은 참가자: <strong>{unassigned.map(p=>p.number).join(", ")}</strong>
+                            <span style={{ color:"var(--muted)", marginLeft:"8px" }}>({unassigned.length}명) — 모든 참가자가 배치되어야 대회가 진행됩니다</span>
+                          </div>
+                        );
+                      })()}
                       <div style={{ display:"flex", alignItems:"center", gap:"8px", marginBottom:"8px" }}>
                         <span style={{ fontWeight:700, color:stageColor, fontSize:"14px" }}>{stage.label}</span>
                         {stage.finalized && <span className="tag tag-green" style={{ fontSize:"10px" }}>✓ 확정</span>}
@@ -1102,30 +1194,48 @@ function SetupPanel({ tournament, setTournament, users, setUsers, directorLocks,
 
                             {assigningRound === r.id && unlocked && !isLocked && (
                               <div style={{ marginTop:"10px" }}>
-                                <p style={{ fontSize:"11px", color:"var(--muted)", marginBottom:"5px" }}>
-                                  클릭으로 배정/해제 | 🔒 = 다른 론다에 이미 배정됨
-                                </p>
-                                <div style={{ display:"flex", flexWrap:"wrap", gap:"5px" }}>
-                                  {catPs.map(p => {
-                                    const inThis  = (r.coupleIds||[]).includes(p.id);
-                                    const inOther = !inThis && otherAssigned.has(p.id);
-                                    return (
-                                      <label key={p.id} style={{
-                                        display:"flex", alignItems:"center", gap:"4px", padding:"4px 8px",
-                                        background: inThis ? "rgba(201,168,76,.15)" : inOther ? "rgba(192,57,43,.07)" : "var(--bg2)",
-                                        borderRadius:"6px", cursor: inOther ? "not-allowed" : "pointer", fontSize:"11px",
-                                        border:"1px solid "+(inThis?"var(--gold)":inOther?"rgba(192,57,43,.35)":"var(--border)"),
-                                        opacity: inOther ? 0.5 : 1, pointerEvents: inOther ? "none" : "auto"
-                                      }}>
-                                        <input type="checkbox" checked={inThis}
-                                          onChange={() => !inOther && toggleCouple(cat.id, r.id, p.id)} />
-                                        <span style={{ color: inOther ? "var(--red2)" : "var(--gold)", fontWeight:700 }}>{p.number}</span>
-                                        <span>{p.nickname || "–"}</span>
-                                        {inOther && <span style={{ fontSize:"9px" }}>🔒</span>}
-                                      </label>
-                                    );
-                                  })}
-                                </div>
+                                {(() => {
+                                  const eligible = getEligibleForStage(cat, stage.stageKey, tournament, directorLocks);
+                                  const notEligible = catPs.filter(p => !eligible.find(e=>e.id===p.id));
+                                  return (
+                                    <>
+                                      <p style={{ fontSize:"11px", color:"var(--muted)", marginBottom:"5px" }}>
+                                        클릭으로 배정/해제 | 🔒 = 다른 론다에 배정됨
+                                        {stage.stageKey !== (cat.stages||[])[0]?.stageKey && (
+                                          <span style={{ color:"var(--blue)", marginLeft:"8px" }}>
+                                            ※ 이전 스테이지 진출자만 배치 가능
+                                          </span>
+                                        )}
+                                      </p>
+                                      <div style={{ display:"flex", flexWrap:"wrap", gap:"5px" }}>
+                                        {eligible.map(p => {
+                                          const inThis  = (r.coupleIds||[]).includes(p.id);
+                                          const inOther = !inThis && otherAssigned.has(p.id);
+                                          return (
+                                            <label key={p.id} style={{
+                                              display:"flex", alignItems:"center", gap:"4px", padding:"4px 8px",
+                                              background: inThis ? "rgba(201,168,76,.15)" : inOther ? "rgba(192,57,43,.07)" : "var(--bg2)",
+                                              borderRadius:"6px", cursor: inOther ? "not-allowed" : "pointer", fontSize:"11px",
+                                              border:"1px solid "+(inThis?"var(--gold)":inOther?"rgba(192,57,43,.35)":"var(--border)"),
+                                              opacity: inOther ? 0.5 : 1, pointerEvents: inOther ? "none" : "auto"
+                                            }}>
+                                              <input type="checkbox" checked={inThis}
+                                                onChange={() => !inOther && toggleCouple(cat.id, r.id, p.id)} />
+                                              <span style={{ color: inOther?"var(--red2)":"var(--gold)", fontWeight:700 }}>{p.number}</span>
+                                              <span>{p.nickname||"–"}</span>
+                                              {inOther && <span style={{ fontSize:"9px" }}>🔒</span>}
+                                            </label>
+                                          );
+                                        })}
+                                        {notEligible.length > 0 && (
+                                          <div style={{ width:"100%", marginTop:"6px", fontSize:"11px", color:"var(--muted)", borderTop:"1px solid var(--border)", paddingTop:"5px" }}>
+                                            배치 불가 (미진출): {notEligible.map(p=>p.number).join(", ")}
+                                          </div>
+                                        )}
+                                      </div>
+                                    </>
+                                  );
+                                })()}
                               </div>
                             )}
                           </div>
@@ -1523,6 +1633,57 @@ function ParticipantMgmtPanel({ tournament, setTournament, t }) {
 
 
 /* ════════════════════════════════════════════
+   MEMO CELL — 한글 IME 안전 입력 컴포넌트
+   onBlur까지 기다렸다가 상위 state 업데이트
+════════════════════════════════════════════ */
+function MemoCell({ value, onChange, disabled, placeholder }) {
+  const [local, setLocal]     = useState(value || "");
+  const isComposing            = React.useRef(false);
+  const lastCommitted          = React.useRef(value || "");
+
+  // 외부 value가 바뀌면 local 동기화 (단, 직접 입력 중에는 무시)
+  React.useEffect(() => {
+    if (!isComposing.current && value !== lastCommitted.current) {
+      setLocal(value || "");
+      lastCommitted.current = value || "";
+    }
+  }, [value]);
+
+  return (
+    <textarea
+      value={local}
+      rows={2}
+      disabled={disabled}
+      placeholder={placeholder}
+      style={{ width:"100%", minWidth:"150px", resize:"vertical", fontSize:"12px" }}
+      onCompositionStart={() => { isComposing.current = true; }}
+      onCompositionEnd={e => {
+        isComposing.current = false;
+        const v = e.target.value;
+        setLocal(v);
+        lastCommitted.current = v;
+        onChange(v);
+      }}
+      onChange={e => {
+        const v = e.target.value;
+        setLocal(v);
+        if (!isComposing.current) {
+          lastCommitted.current = v;
+          onChange(v);
+        }
+      }}
+      onBlur={e => {
+        // 블러 시 최종 동기화
+        if (e.target.value !== lastCommitted.current) {
+          lastCommitted.current = e.target.value;
+          onChange(e.target.value);
+        }
+      }}
+    />
+  );
+}
+
+/* ════════════════════════════════════════════
    JUDGE SCORING PANEL
 ════════════════════════════════════════════ */
 function JudgeScoringPanel({ tournament, scores, setScores, currentUser, users, judgeLocks, setJudgeLocks, directorLocks, broadcast, t }) {
@@ -1544,8 +1705,9 @@ function JudgeScoringPanel({ tournament, scores, setScores, currentUser, users, 
   const catPs    = cat ? getCatParticipants(tournament, cat.id) : [];
   const couples  = round ? catPs.filter(p => (round.coupleIds||[]).includes(p.id)) : [];
   const isJJ     = cat?.type === "jacknjill";
-  const criteria = cat?.scoringType === "detailed" ? (cat.criteria||[]) : [];
-  const avgMode  = cat?.scoringAvgMode || "normal";
+  const criteria  = cat?.scoringType === "detailed" ? (cat.criteria||[]) : [];
+  const avgMode   = cat?.scoringAvgMode  || "normal";
+  const calcMode  = cat?.scoringCalcMode || "average";
 
   const getEntry = (coupleId) => {
     const saved = scores?.[roundKey]?.[judgeId]?.[coupleId] || {};
@@ -1633,6 +1795,7 @@ function JudgeScoringPanel({ tournament, scores, setScores, currentUser, users, 
           <div style={{ padding:"10px 14px", borderBottom:"1px solid var(--border)", display:"flex", alignItems:"center", gap:"8px", flexWrap:"wrap" }}>
             <span className="serif" style={{ color:"var(--gold)", fontWeight:700 }}>{round.title}</span>
             {avgMode==="trimmed" && <span className="tag tag-blue" style={{ fontSize:"10px" }}>절사평균</span>}
+            {calcMode==="sum" && <span className="tag tag-blue" style={{ fontSize:"10px" }}>합산채점</span>}
             {isDirectorLocked && <span className="tag tag-green">🔒 감독관 확정</span>}
             {isJudgeLocked && !isDirectorLocked && <span className="tag tag-green">📌 최종제출됨</span>}
             <div style={{ marginLeft:"auto", display:"flex", gap:"7px" }}>
@@ -1662,7 +1825,7 @@ function JudgeScoringPanel({ tournament, scores, setScores, currentUser, users, 
                   }
                   {tournament.showAvgToJudge !== false && (
                     <>
-                      <th style={{ minWidth:"80px" }}>{t("avgScore")}</th>
+                      <th style={{ minWidth:"80px" }}>{calcMode==="sum"?"심판점수":t("avgScore")}</th>
                       <th style={{ minWidth:"65px" }}>{t("diff")}</th>
                     </>
                   )}
@@ -1671,8 +1834,8 @@ function JudgeScoringPanel({ tournament, scores, setScores, currentUser, users, 
               <tbody>
                 {couples.map(p => {
                   const entry    = getEntry(p.id);
-                  const myScore  = calcEntryScore(entry, cat.scoringType, criteria);
-                  const avgScore = calcCoupleAvg(scores, roundKey, p.id, judgeUsers, cat.scoringType, criteria, avgMode);
+                  const myScore  = calcEntryScore(entry, cat.scoringType, criteria, calcMode);
+                  const avgScore = calcCoupleAvg(scores, roundKey, p.id, judgeUsers, cat.scoringType, criteria, avgMode, calcMode);
                   const outlier  = tournament.outlierEnabled !== false && tournament.showAvgToJudge !== false &&
                     isOutlierScore(myScore, judgeId, scores, roundKey, p.id, judgeUsers, cat.scoringType, criteria, tournament.outlierThreshold);
                   const blur     = isJJ && blurOpposite && (
@@ -1696,9 +1859,12 @@ function JudgeScoringPanel({ tournament, scores, setScores, currentUser, users, 
                         </td>
                       )}
                       <td>
-                        <textarea value={entry.memo||""} onChange={e => setMemo(p.id, e.target.value)}
-                          placeholder={t("memoPlaceholder")} rows={2} disabled={disabled}
-                          style={{ width:"100%", minWidth:"150px", resize:"vertical", fontSize:"12px" }} />
+                        <MemoCell
+                          value={entry.memo||""}
+                          onChange={v => setMemo(p.id, v)}
+                          disabled={disabled}
+                          placeholder={t("memoPlaceholder")}
+                        />
                       </td>
                       {criteria.length > 0
                         ? criteria.map(k => (
@@ -1766,8 +1932,9 @@ function DirectorPanel({ tournament, scores, setTournament, users, judgeLocks, s
   const couples = round ? catPs.filter(p => (round.coupleIds||[]).includes(p.id)) : [];
   const avgMode = cat?.scoringAvgMode || "normal";
 
-  const getAvg = (cid) => calcCoupleAvg(scores, selRound, cid, judgeUsers, cat?.scoringType, cat?.criteria, avgMode);
-  const getJScore = (jid, cid) => calcEntryScore(scores?.[selRound]?.[jid]?.[cid], cat?.scoringType, cat?.criteria);
+  const calcMode = cat?.scoringCalcMode || "average";
+  const getAvg = (cid) => calcCoupleAvg(scores, selRound, cid, judgeUsers, cat?.scoringType, cat?.criteria, avgMode, calcMode);
+  const getJScore = (jid, cid) => calcEntryScore(scores?.[selRound]?.[jid]?.[cid], cat?.scoringType, cat?.criteria, calcMode);
 
   const ranked = useMemo(() => {
     return [...couples].sort((a, b) => {
@@ -1816,8 +1983,8 @@ function DirectorPanel({ tournament, scores, setTournament, users, judgeLocks, s
         try {
           const rsA = (cat.rounds||[]).filter(r => r.stageKey===showStageAdv && isRFin(r) && toArr(r.coupleIds).includes(a.id));
           const rsB = (cat.rounds||[]).filter(r => r.stageKey===showStageAdv && isRFin(r) && toArr(r.coupleIds).includes(b.id));
-          const avA = rsA.length ? rsA.map(r => calcCoupleAvg(scores,r.id,a.id,judgeUsers,cat.scoringType,cat.criteria,avgMode)||0).reduce((x,y)=>x+y,0)/rsA.length : 0;
-          const avB = rsB.length ? rsB.map(r => calcCoupleAvg(scores,r.id,b.id,judgeUsers,cat.scoringType,cat.criteria,avgMode)||0).reduce((x,y)=>x+y,0)/rsB.length : 0;
+          const avA = rsA.length ? rsA.map(r => calcCoupleAvg(scores,r.id,a.id,judgeUsers,cat.scoringType,cat.criteria,avgMode,calcMode)||0).reduce((x,y)=>x+y,0)/rsA.length : 0;
+          const avB = rsB.length ? rsB.map(r => calcCoupleAvg(scores,r.id,b.id,judgeUsers,cat.scoringType,cat.criteria,avgMode,calcMode)||0).reduce((x,y)=>x+y,0)/rsB.length : 0;
           return avB - avA;
         } catch(e) { return 0; }
       });
@@ -1919,7 +2086,7 @@ function DirectorPanel({ tournament, scores, setTournament, users, judgeLocks, s
       finalRankings = finalIds.map(pid => {
         const p = (tournament.participants||[]).find(x => x.id===pid);
         const rs = finalRs.filter(r => toArrL(r.coupleIds).includes(pid));
-        const avgs = rs.map(r => calcCoupleAvg(scores,r.id,pid,judgeUsers,cat2?.scoringType,cat2?.criteria,avgMode)).filter(v=>v!=null);
+        const avgs = rs.map(r => calcCoupleAvg(scores,r.id,pid,judgeUsers,cat2?.scoringType,cat2?.criteria,avgMode,calcMode)).filter(v=>v!=null);
         const avg = avgs.length ? avgs.reduce((a,b)=>a+b,0)/avgs.length : null;
         return { pid, number:p?.number||"?", nickname:p?.nickname||"", avg };
       }).sort((a,b) => b.avg!=null&&a.avg!=null ? b.avg-a.avg : b.avg!=null?1:-1)
@@ -1985,21 +2152,33 @@ function DirectorPanel({ tournament, scores, setTournament, users, judgeLocks, s
           <div style={{ display:"flex", alignItems:"center", gap:"8px", flexWrap:"wrap" }}>
             <span className="serif" style={{ fontSize:"15px", color:"var(--gold)", fontWeight:700 }}>{round.title}</span>
             {(cat?.scoringAvgMode==="trimmed") && <span className="tag tag-blue" style={{ fontSize:"10px" }}>절사평균</span>}
+            {(cat?.scoringCalcMode==="sum") && <span className="tag tag-blue" style={{ fontSize:"10px" }}>합산채점</span>}
             {isDirectorLocked && <span className="tag tag-green">🔒 확정</span>}
             <div style={{ marginLeft:"auto", display:"flex", gap:"7px" }}>
               <button className="btn btn-ghost btn-sm" style={{ borderColor:"var(--warn)", color:"var(--warn)" }}
                 onClick={() => { setBroadcastMsg(""); setShowBroadcast(true); }}>
                 📢 공지
               </button>
-              {!isDirectorLocked && (
-                <button className="btn btn-red btn-sm"
-                  onClick={() => { setSelectedAdv([]); setShowLockConfirm(true); }}
-                  disabled={!allJudgesLocked}
-                  style={{ opacity: allJudgesLocked?1:0.45 }}
-                  title={!allJudgesLocked?"모든 심판 최종제출 필요":""}>
-                  🔒 론다 확정{!allJudgesLocked?` (${lockedJudges.length}/${judgeUsers.length})`:""}
-                </button>
-              )}
+              {!isDirectorLocked && (() => {
+                const unassigned = cat ? findUnassignedParticipants(cat, round.stageKey, tournament) : [];
+                const hasUnassigned = unassigned.length > 0;
+                return (
+                  <div style={{ display:"flex", flexDirection:"column", gap:"4px", alignItems:"flex-end" }}>
+                    {hasUnassigned && (
+                      <div style={{ fontSize:"11px", color:"var(--warn)", background:"rgba(230,126,34,.1)", border:"1px solid var(--warn)", borderRadius:"6px", padding:"3px 8px" }}>
+                        ⚠ 미배치: {unassigned.map(p=>p.number).join(", ")}
+                      </div>
+                    )}
+                    <button className="btn btn-red btn-sm"
+                      onClick={() => { setSelectedAdv([]); setShowLockConfirm(true); }}
+                      disabled={!allJudgesLocked || hasUnassigned}
+                      style={{ opacity: (allJudgesLocked && !hasUnassigned)?1:0.45 }}
+                      title={hasUnassigned?"미배치 참가자가 있어 확정 불가":!allJudgesLocked?"모든 심판 최종제출 필요":""}>
+                      🔒 론다 확정{!allJudgesLocked?` (${lockedJudges.length}/${judgeUsers.length})`:hasUnassigned?" (미배치 있음)":""}
+                    </button>
+                  </div>
+                );
+              })()}
               {isDirectorLocked && currentUser?.role==="admin" && (
                 <button className="btn btn-ghost btn-sm" style={{ color:"var(--red2)" }} onClick={unlockRound}>
                   ⚠ 잠금해제
@@ -2204,7 +2383,7 @@ function DirectorPanel({ tournament, scores, setTournament, users, judgeLocks, s
                 ? <p style={{ fontSize:"12px", color:"var(--red2)" }}>⚠ 론다 확정 시 진출자를 선택해야 합니다.</p>
                 : stageAdvancers.map((p, idx) => {
                     const rs = (cat?.rounds||[]).filter(r => r.stageKey===showStageAdv && isRFin(r) && toArr(r.coupleIds).includes(p.id));
-                    const avgs = rs.map(r => calcCoupleAvg(scores,r.id,p.id,judgeUsers,cat?.scoringType,cat?.criteria,avgMode)).filter(v=>v!=null);
+                    const avgs = rs.map(r => calcCoupleAvg(scores,r.id,p.id,judgeUsers,cat?.scoringType,cat?.criteria,avgMode,calcMode)).filter(v=>v!=null);
                     const av = avgs.length ? avgs.reduce((a,b)=>a+b,0)/avgs.length : null;
                     const fromR = (cat?.rounds||[]).find(r => r.stageKey===showStageAdv && (r.advancedIds||[]).includes(p.id));
                     return (
@@ -2283,7 +2462,8 @@ function LivePanel({ tournament, scores, users, t }) {
   const medals     = ["🥇","🥈","🥉"];
   const avgMode    = cat?.scoringAvgMode || "normal";
 
-  const getAvg = (cid) => calcCoupleAvg(scores, selRound, cid, judgeUsers, cat?.scoringType, cat?.criteria, avgMode);
+  const calcMode = cat?.scoringCalcMode || "average";
+  const getAvg = (cid) => calcCoupleAvg(scores, selRound, cid, judgeUsers, cat?.scoringType, cat?.criteria, avgMode, calcMode);
 
   const ranked = useMemo(() => {
     return [...couples].sort((a,b) => {
@@ -2421,7 +2601,8 @@ function PublicObserverPanel({ tournament, scores, users, lang, setLang, t }) {
   const finalRes   = (tournament.finalResults||{})[selCat];
   const avgMode    = cat?.scoringAvgMode || "normal";
 
-  const getAvg = (rid, cid) => calcCoupleAvg(scores, rid, cid, judgeUsers, cat?.scoringType, cat?.criteria, avgMode);
+  const calcMode = cat?.scoringCalcMode || "average";
+  const getAvg = (rid, cid) => calcCoupleAvg(scores, rid, cid, judgeUsers, cat?.scoringType, cat?.criteria, avgMode, calcMode);
 
   React.useEffect(() => {
     document.title = `🌹 ${tournament.name||"Tango"} — 라이브`;
@@ -2560,7 +2741,8 @@ function ExportPanel({ tournament, scores, users, t }) {
   const couples    = round ? catPs.filter(p => (round.coupleIds||[]).includes(p.id)) : [];
   const avgMode    = cat?.scoringAvgMode || "normal";
 
-  const getAvg = (cid) => calcCoupleAvg(scores, selRound, cid, judgeUsers, cat?.scoringType, cat?.criteria, avgMode);
+  const calcMode = cat?.scoringCalcMode || "average";
+  const getAvg = (cid) => calcCoupleAvg(scores, selRound, cid, judgeUsers, cat?.scoringType, cat?.criteria, avgMode, calcMode);
 
   const ranked = useMemo(() => {
     return [...couples].sort((a,b) => {
@@ -2641,7 +2823,7 @@ function ExportPanel({ tournament, scores, users, t }) {
                       <td>{p.nickname||"–"}</td>
                       {judgeUsers.map(j => {
                         const e  = scores?.[selRound]?.[j.id]?.[p.id];
-                        const sc = calcEntryScore(e, cat.scoringType, cat.criteria||[]);
+                        const sc = calcEntryScore(e, cat.scoringType, cat.criteria||[], calcMode);
                         return <td key={j.id} style={{ textAlign:"center", color:sc!=null?"var(--text)":"var(--muted)" }}>{sc!=null?sc.toFixed(2):"–"}</td>;
                       })}
                       <td style={{ textAlign:"center", fontWeight:700, color:avg!=null?"var(--gold)":"var(--muted)" }}>
