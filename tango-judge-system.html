@@ -425,6 +425,59 @@ function getEligibleForStage(cat, stageKey, tournament, directorLocks) {
   return getCatParticipants(tournament, cat.id);
 }
 
+/* ════════════════════════════════════════════
+   JACK & JILL 균형 배분 헬퍼
+════════════════════════════════════════════ */
+// JJ 종목에서 리더/팔로워를 균형 있게 배분
+// 반환: { distributed: [{roundId, coupleIds}], warning: string|null }
+function distributeJJ(eligible, stageRounds, mode) {
+  const leaders   = eligible.filter(p => p.gender === "male");
+  const followers  = eligible.filter(p => p.gender === "female");
+  const nRounds   = stageRounds.length;
+  if (nRounds === 0) return { distributed: [], warning: null };
+
+  // 셔플 또는 번호순 정렬
+  const shuffle = (arr) => {
+    const a = [...arr];
+    for (let i=a.length-1;i>0;i--) { const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; }
+    return a;
+  };
+  const sorted  = (arr) => [...arr].sort((a,b) => parseInt(a.number)-parseInt(b.number));
+
+  const poolL = mode === "random" ? shuffle(leaders)  : sorted(leaders);
+  const poolF = mode === "random" ? shuffle(followers) : sorted(followers);
+
+  // 각 론다별 배분 수 계산
+  const baseL = Math.floor(poolL.length / nRounds);
+  const remL  = poolL.length % nRounds;
+  const baseF = Math.floor(poolF.length / nRounds);
+  const remF  = poolF.length % nRounds;
+
+  const distributed = stageRounds.map((r, i) => {
+    const cntL = baseL + (i < remL ? 1 : 0);
+    const cntF = baseF + (i < remF ? 1 : 0);
+    const startL = stageRounds.slice(0,i).reduce((s,_,j) => s + baseL + (j<remL?1:0), 0);
+    const startF = stageRounds.slice(0,i).reduce((s,_,j) => s + baseF + (j<remF?1:0), 0);
+    const lIds = poolL.slice(startL, startL+cntL).map(p=>p.id);
+    const fIds = poolF.slice(startF, startF+cntF).map(p=>p.id);
+    return { roundId: r.id, coupleIds: [...lIds, ...fIds] };
+  });
+
+  // 경고 계산: 전체 리더/팔로워 수 차이
+  const diff = Math.abs(poolL.length - poolF.length);
+  let warning = null;
+  if (diff > 0) {
+    const shortage = poolL.length < poolF.length ? "리더" : "팔로워";
+    const perRound = Math.floor(diff / nRounds);
+    const extra    = diff % nRounds;
+    warning = `⚠ ${shortage} 도우미가 전체 ${diff}명 부족합니다`
+      + ` (론다당 약 ${perRound}${extra>0?`~${perRound+1}`:""}명씩 부족).`
+      + ` 참가자 관리에서 도우미 ${shortage}를 추가해주세요.`;
+  }
+
+  return { distributed, warning };
+}
+
 // 해당 스테이지에서 배치되지 않은 참가자 찾기 (모든 스테이지 대상)
 // 첫 스테이지: 종목 배정 참가자 전원 기준
 // 이후 스테이지: 이전 스테이지 진출자 기준
@@ -721,25 +774,40 @@ function SetupPanel({ tournament, setTournament, users, setUsers, directorLocks,
     if (!c) return;
     const stageRounds = (c.rounds || []).filter(r => r.stageKey === stageKey);
     if (!stageRounds.length) return;
-    // 첫 스테이지면 전체 참가자, 이후면 이전 스테이지 진출자만
-    let pool = getEligibleForStage(c, stageKey, tournament, directorLocks);
+    const pool = getEligibleForStage(c, stageKey, tournament, directorLocks);
     if (!pool.length) {
       alert("배치 가능한 참가자가 없습니다. 이전 스테이지 진출자가 확정되어야 합니다.");
       return;
     }
+
+    // 잭앤질: 리더/팔로워 균형 배분
+    if (c.type === "jacknjill") {
+      const { distributed, warning } = distributeJJ(pool, stageRounds, mode);
+      updCat(catId, {
+        rounds: (c.rounds || []).map(r => {
+          const d = distributed.find(x => x.roundId === r.id);
+          return d ? { ...r, coupleIds: d.coupleIds } : r;
+        })
+      });
+      if (warning) alert(warning);
+      return;
+    }
+
+    // 일반 종목: 기존 방식
+    let sorted = [...pool];
     if (mode === "random") {
-      for (let i = pool.length - 1; i > 0; i--) {
+      for (let i = sorted.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
-        [pool[i], pool[j]] = [pool[j], pool[i]];
+        [sorted[i], sorted[j]] = [sorted[j], sorted[i]];
       }
     } else {
-      pool.sort((a, b) => parseInt(a.number) - parseInt(b.number));
+      sorted.sort((a, b) => parseInt(a.number) - parseInt(b.number));
     }
     const n = stageRounds.length;
     let idx = 0;
-    const distributed = stageRounds.map((r, i) => {
-      const sz = r.targetSize || Math.ceil(pool.length / n);
-      const chunk = pool.slice(idx, idx + sz).map(p => p.id);
+    const distributed = stageRounds.map((r) => {
+      const sz = r.targetSize || Math.ceil(sorted.length / n);
+      const chunk = sorted.slice(idx, idx + sz).map(p => p.id);
       idx += sz;
       return { ...r, coupleIds: chunk };
     });
@@ -1166,6 +1234,18 @@ function SetupPanel({ tournament, setTournament, users, setUsers, directorLocks,
                       {(() => {
                         const unassigned = findUnassignedParticipants(cat, stage.stageKey, tournament, directorLocks);
                         if (!unassigned.length || stage.finalized) return null;
+                        if (cat.type === "jacknjill") {
+                          const unL = unassigned.filter(p=>p.gender==="male");
+                          const unF = unassigned.filter(p=>p.gender==="female");
+                          return (
+                            <div style={{ background:"rgba(230,126,34,.1)", border:"1px solid var(--warn)", borderRadius:"8px", padding:"8px 12px", marginBottom:"8px", fontSize:"12px", color:"var(--warn)" }}>
+                              ⚠ 배치되지 않은 참가자 ({unassigned.length}명):
+                              {unL.length>0 && <span style={{ marginLeft:"8px" }}>리더 {unL.length}명 ({unL.map(p=>p.number).join(", ")})</span>}
+                              {unF.length>0 && <span style={{ marginLeft:"8px" }}>팔로워 {unF.length}명 ({unF.map(p=>p.number).join(", ")})</span>}
+                              <span style={{ color:"var(--muted)", display:"block", marginTop:"2px" }}>— 모든 참가자가 배치되어야 대회가 진행됩니다</span>
+                            </div>
+                          );
+                        }
                         return (
                           <div style={{ background:"rgba(230,126,34,.1)", border:"1px solid var(--warn)", borderRadius:"8px", padding:"8px 12px", marginBottom:"8px", fontSize:"12px", color:"var(--warn)" }}>
                             ⚠ 아직 론다에 배치되지 않은 참가자: <strong>{unassigned.map(p=>p.number).join(", ")}</strong>
@@ -1219,17 +1299,44 @@ function SetupPanel({ tournament, setTournament, users, setUsers, directorLocks,
                             </div>
 
                             {(r.coupleIds||[]).length > 0 && (
-                              <div style={{ marginTop:"7px", display:"flex", flexWrap:"wrap", gap:"4px" }}>
-                                {(r.coupleIds||[]).map(pid => {
-                                  const p = (tournament.participants||[]).find(x => x.id === pid);
-                                  if (!p) return null;
-                                  return (
-                                    <span key={pid} style={{ display:"inline-flex", alignItems:"center", gap:"3px", background:"rgba(201,168,76,.1)", border:"1px solid rgba(201,168,76,.25)", borderRadius:"4px", padding:"2px 6px", fontSize:"11px" }}>
-                                      <span style={{ color:"var(--gold)", fontWeight:700 }}>{p.number}</span>
-                                      {p.nickname && <span style={{ color:"var(--muted)" }}>{p.nickname}</span>}
-                                    </span>
+                              <div style={{ marginTop:"7px" }}>
+                                {/* JJ 리더/팔로워 불균형 경고 */}
+                                {cat.type === "jacknjill" && (() => {
+                                  const toArr = (v) => !v?[]:Array.isArray(v)?v:Object.values(v);
+                                  const ids = toArr(r.coupleIds);
+                                  const ps  = ids.map(id=>(tournament.participants||[]).find(p=>p.id===id)).filter(Boolean);
+                                  const nL  = ps.filter(p=>p.gender==="male").length;
+                                  const nF  = ps.filter(p=>p.gender==="female").length;
+                                  const diff = Math.abs(nL - nF);
+                                  if (diff === 0) return (
+                                    <div style={{ fontSize:"11px", color:"var(--green)", marginBottom:"5px" }}>
+                                      ✓ 리더 {nL}명 · 팔로워 {nF}명 (균형)
+                                    </div>
                                   );
-                                })}
+                                  const shortage = nL < nF ? "리더" : "팔로워";
+                                  return (
+                                    <div style={{ fontSize:"11px", color:"var(--warn)", background:"rgba(230,126,34,.08)", border:"1px solid rgba(230,126,34,.3)", borderRadius:"5px", padding:"3px 8px", marginBottom:"5px" }}>
+                                      ⚠ 리더 {nL}명 · 팔로워 {nF}명 — {shortage} 도우미 {diff}명 필요
+                                    </div>
+                                  );
+                                })()}
+                                <div style={{ display:"flex", flexWrap:"wrap", gap:"4px" }}>
+                                  {(r.coupleIds||[]).map(pid => {
+                                    const p = (tournament.participants||[]).find(x => x.id === pid);
+                                    if (!p) return null;
+                                    const isL = p.gender==="male", isF = p.gender==="female";
+                                    return (
+                                      <span key={pid} style={{ display:"inline-flex", alignItems:"center", gap:"3px",
+                                        background: cat.type==="jacknjill"?(isL?"rgba(52,152,219,.12)":isF?"rgba(231,76,60,.1)":"rgba(201,168,76,.1)"):"rgba(201,168,76,.1)",
+                                        border:"1px solid "+(cat.type==="jacknjill"?(isL?"rgba(52,152,219,.35)":isF?"rgba(231,76,60,.3)":"rgba(201,168,76,.25)"):"rgba(201,168,76,.25)"),
+                                        borderRadius:"4px", padding:"2px 6px", fontSize:"11px" }}>
+                                        <span style={{ color: cat.type==="jacknjill"?(isL?"var(--blue)":isF?"var(--red2)":"var(--gold)"):"var(--gold)", fontWeight:700 }}>{p.number}</span>
+                                        {cat.type==="jacknjill" && <span style={{ fontSize:"9px", color:"var(--muted)" }}>{isL?"L":isF?"F":""}</span>}
+                                        {p.nickname && <span style={{ color:"var(--muted)" }}>{p.nickname}</span>}
+                                      </span>
+                                    );
+                                  })}
+                                </div>
                               </div>
                             )}
 
@@ -1676,6 +1783,71 @@ function ParticipantMgmtPanel({ tournament, setTournament, t }) {
 
 
 /* ════════════════════════════════════════════
+   SCORE CELL — IME 비침범 점수 입력
+   +/- 버튼으로 조작 → 숫자 input 클릭 최소화
+   직접 입력도 가능하되 blur 시 커밋
+════════════════════════════════════════════ */
+function ScoreCell({ value, onChange, disabled, step }) {
+  const s = step || 0.5;
+  const ref = React.useRef(null);
+
+  // 외부 value 변화 시 DOM 직접 업데이트 (controlled 방지)
+  React.useEffect(() => {
+    if (ref.current && document.activeElement !== ref.current) {
+      ref.current.value = value != null && value !== "" ? String(value) : "";
+    }
+  }, [value]);
+
+  const clamp = (v) => Math.min(10, Math.max(0, Math.round(v / s) * s));
+
+  const adjust = (delta) => {
+    const cur = parseFloat(ref.current?.value) || 0;
+    const next = clamp(cur + delta);
+    if (ref.current) ref.current.value = String(next);
+    onChange(next);
+  };
+
+  return (
+    <div style={{ display:"flex", alignItems:"center", gap:"2px", justifyContent:"center" }}>
+      <button
+        disabled={disabled}
+        onMouseDown={e => { e.preventDefault(); adjust(-s); }}
+        style={{ width:"22px", height:"22px", borderRadius:"4px", border:"1px solid var(--border)",
+          background:"var(--bg3)", color:"var(--muted)", cursor:disabled?"not-allowed":"pointer",
+          fontSize:"14px", lineHeight:1, display:"flex", alignItems:"center", justifyContent:"center",
+          flexShrink:0 }}>−</button>
+      <input
+        ref={ref}
+        type="text"
+        inputMode="decimal"
+        defaultValue={value != null && value !== "" ? String(value) : ""}
+        disabled={disabled}
+        placeholder="–"
+        className="score-input"
+        style={{ width:"52px" }}
+        onBlur={e => {
+          const v = e.target.value;
+          if (v === "" || v === "–") { onChange(null); return; }
+          const n = parseFloat(v);
+          if (!isNaN(n)) onChange(clamp(n));
+          else { e.target.value = ""; onChange(null); }
+        }}
+        onChange={e => {
+          // 실시간 타이핑은 blur에서 커밋 (IME 간섭 방지)
+        }}
+      />
+      <button
+        disabled={disabled}
+        onMouseDown={e => { e.preventDefault(); adjust(+s); }}
+        style={{ width:"22px", height:"22px", borderRadius:"4px", border:"1px solid var(--border)",
+          background:"var(--bg3)", color:"var(--muted)", cursor:disabled?"not-allowed":"pointer",
+          fontSize:"14px", lineHeight:1, display:"flex", alignItems:"center", justifyContent:"center",
+          flexShrink:0 }}>＋</button>
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════
    MEMO CELL — IME 최종 해결
    핵심 전략:
    1. uncontrolled (defaultValue+ref) → React 렌더링이 DOM 건드리지 않음
@@ -1722,6 +1894,10 @@ function MemoCell({ value, onChange, disabled, placeholder, lang }) {
       disabled={disabled}
       placeholder={placeholder}
       lang={lang}
+      inputMode="text"
+      autoCorrect="off"
+      autoCapitalize="off"
+      spellCheck={false}
       style={{ width:"100%", minWidth:"150px", resize:"vertical", fontSize:"12px" }}
       onFocus={()      => { focused.current = true; }}
       onBlur={e        => { focused.current = false; composing.current = false; commit(e.target.value); }}
@@ -1765,11 +1941,11 @@ function JudgeScoringPanel({ tournament, scores, setScores, currentUser, users, 
   };
 
   const setSimple = (cid, v) =>
-    setLocalScores(p => ({ ...p, [cid]: { ...(p[cid]||{}), simple: v===""?null:Number(v) } }));
+    setLocalScores(p => ({ ...p, [cid]: { ...(p[cid]||{}), simple: v==null?null:Number(v) } }));
 
   const setCrit = (cid, key, v) =>
     setLocalScores(p => ({
-      ...p, [cid]: { ...(p[cid]||{}), criteria: { ...(p[cid]?.criteria||{}), [key]: v===""?null:Number(v) } }
+      ...p, [cid]: { ...(p[cid]||{}), criteria: { ...(p[cid]?.criteria||{}), [key]: v==null?null:Number(v) } }
     }));
 
   const setMemo = (cid, v) =>
@@ -1924,18 +2100,18 @@ function JudgeScoringPanel({ tournament, scores, setScores, currentUser, users, 
                       {criteria.length > 0
                         ? criteria.map(k => (
                             <td key={k}>
-                              <input type="text" inputMode="decimal" pattern="[0-9]*\.?[0-9]*"
-                                value={entry.criteria?.[k] ?? ""} disabled={disabled}
-                                onChange={e => { const v=e.target.value; if(v===""||/^\d*\.?\d*$/.test(v)&&Number(v)<=10) setCrit(p.id,k,v); }}
-                                className="score-input" placeholder="–" />
+                              <ScoreCell
+                                value={entry.criteria?.[k] ?? null}
+                                onChange={v => setCrit(p.id, k, v)}
+                                disabled={disabled} />
                             </td>
                           ))
                         : (
                           <td>
-                            <input type="text" inputMode="decimal" pattern="[0-9]*\.?[0-9]*"
-                              value={entry.simple ?? ""} disabled={disabled}
-                              onChange={e => { const v=e.target.value; if(v===""||/^\d*\.?\d*$/.test(v)&&Number(v)<=10) setSimple(p.id,v); }}
-                              className="score-input" placeholder="–" />
+                            <ScoreCell
+                              value={entry.simple ?? null}
+                              onChange={v => setSimple(p.id, v)}
+                              disabled={disabled} />
                           </td>
                         )
                       }
@@ -2114,21 +2290,35 @@ function DirectorPanel({ tournament, scores, setTournament, users, judgeLocks, s
     if (nsk && advIds.length > 0 && distMode !== "none") {
       const nextRs = newRounds.filter(r => r.stageKey === nsk);
       if (nextRs.length > 0) {
-        let pool = advIds.map(id => (tournament.participants||[]).find(p => p.id===id)).filter(Boolean);
-        if (distMode === "random") {
-          for (let i=pool.length-1;i>0;i--) {
-            const j=Math.floor(Math.random()*(i+1)); [pool[i],pool[j]]=[pool[j],pool[i]];
-          }
+        const pool = advIds.map(id => (tournament.participants||[]).find(p => p.id===id)).filter(Boolean);
+        if (!pool.length) { setShowStageAdv(null); return; }
+
+        if (cat2?.type === "jacknjill") {
+          // JJ: 리더/팔로워 균형 배분
+          const { distributed, warning } = distributeJJ(pool, nextRs, distMode);
+          newRounds = newRounds.map(r => {
+            const d = distributed.find(x => x.roundId === r.id);
+            return d ? { ...r, coupleIds: d.coupleIds } : r;
+          });
+          if (warning) setTimeout(() => alert(warning), 300);
         } else {
-          pool.sort((a,b) => parseInt(a.number)-parseInt(b.number));
+          // 일반 종목
+          let sorted = [...pool];
+          if (distMode === "random") {
+            for (let i=sorted.length-1;i>0;i--) {
+              const j=Math.floor(Math.random()*(i+1)); [sorted[i],sorted[j]]=[sorted[j],sorted[i]];
+            }
+          } else {
+            sorted.sort((a,b) => parseInt(a.number)-parseInt(b.number));
+          }
+          let idx=0;
+          const dist = nextRs.map(r => {
+            const sz = r.targetSize || Math.ceil(sorted.length/nextRs.length);
+            const chunk = sorted.slice(idx,idx+sz).map(p=>p.id); idx+=sz;
+            return { ...r, coupleIds: chunk };
+          });
+          newRounds = newRounds.map(r => { const d=dist.find(x=>x.id===r.id); return d||r; });
         }
-        let idx=0;
-        const dist = nextRs.map(r => {
-          const sz = r.targetSize || Math.ceil(pool.length/nextRs.length);
-          const chunk = pool.slice(idx,idx+sz).map(p=>p.id); idx+=sz;
-          return { ...r, coupleIds: chunk };
-        });
-        newRounds = newRounds.map(r => { const d=dist.find(x=>x.id===r.id); return d||r; });
       }
     }
 
