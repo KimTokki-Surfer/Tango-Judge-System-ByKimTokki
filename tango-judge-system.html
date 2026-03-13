@@ -411,23 +411,28 @@ function getEligibleForStage(cat, stageKey, tournament, directorLocks) {
   return getCatParticipants(tournament, cat.id);
 }
 
-// 첫 스테이지에서 종목 배정 참가자 중 어떤 론다에도 없는 참가자 찾기
-function findUnassignedParticipants(cat, stageKey, tournament) {
+// 해당 스테이지에서 배치되지 않은 참가자 찾기 (모든 스테이지 대상)
+// 첫 스테이지: 종목 배정 참가자 전원 기준
+// 이후 스테이지: 이전 스테이지 진출자 기준
+function findUnassignedParticipants(cat, stageKey, tournament, directorLocks) {
   if (!cat) return [];
-  const stages = cat.stages || [];
-  const stageIdx = stages.findIndex(s => s.stageKey === stageKey);
-  // 첫 스테이지만 체크
-  if (stageIdx !== 0) return [];
-  const stageRounds = (cat.rounds || []).filter(r => r.stageKey === stageKey);
-  if (!stageRounds.length) return [];
-  const allAssigned = new Set(stageRounds.flatMap(r => {
-    const v = r.coupleIds;
+  const toArr = (v) => {
     if (!v) return [];
     if (Array.isArray(v)) return v;
     if (typeof v === "object") return Object.values(v);
     return [];
-  }));
-  return getCatParticipants(tournament, cat.id).filter(p => !allAssigned.has(p.id));
+  };
+  const stageRounds = (cat.rounds || []).filter(r => r.stageKey === stageKey);
+  if (!stageRounds.length) return [];
+
+  // 이 스테이지 론다에 배치된 참가자 전체 집합
+  const allAssigned = new Set(
+    stageRounds.flatMap(r => toArr(r.coupleIds)).filter(Boolean)
+  );
+
+  // 배치 대상 모수: getEligibleForStage 활용
+  const eligible = getEligibleForStage(cat, stageKey, tournament, directorLocks);
+  return eligible.filter(p => !allAssigned.has(p.id));
 }
 
 
@@ -1139,7 +1144,7 @@ function SetupPanel({ tournament, setTournament, users, setUsers, directorLocks,
                     <div key={stage.stageKey}>
                       {/* 미배치 참가자 경고 */}
                       {(() => {
-                        const unassigned = findUnassignedParticipants(cat, stage.stageKey, tournament);
+                        const unassigned = findUnassignedParticipants(cat, stage.stageKey, tournament, directorLocks);
                         if (!unassigned.length || stage.finalized) return null;
                         return (
                           <div style={{ background:"rgba(230,126,34,.1)", border:"1px solid var(--warn)", borderRadius:"8px", padding:"8px 12px", marginBottom:"8px", fontSize:"12px", color:"var(--warn)" }}>
@@ -1655,50 +1660,53 @@ function ParticipantMgmtPanel({ tournament, setTournament, t }) {
 
 
 /* ════════════════════════════════════════════
-   MEMO CELL — 한글 IME 안전 입력 컴포넌트
-   onBlur까지 기다렸다가 상위 state 업데이트
+   MEMO CELL — 한글 IME 완전 해결 버전
+   defaultValue + ref 기반으로 React 렌더링과 분리
 ════════════════════════════════════════════ */
 function MemoCell({ value, onChange, disabled, placeholder }) {
-  const [local, setLocal]     = useState(value || "");
-  const isComposing            = React.useRef(false);
-  const lastCommitted          = React.useRef(value || "");
+  const ref         = React.useRef(null);
+  const isFocused   = React.useRef(false);
+  const isComposing = React.useRef(false);
+  const committed   = React.useRef(value || "");
 
-  // 외부 value가 바뀌면 local 동기화 (단, 직접 입력 중에는 무시)
+  // 마운트 시 초기값
   React.useEffect(() => {
-    if (!isComposing.current && value !== lastCommitted.current) {
-      setLocal(value || "");
-      lastCommitted.current = value || "";
+    if (ref.current) ref.current.value = value || "";
+    committed.current = value || "";
+  }, []);
+
+  // 외부 value 변화 → 포커스 중이 아닐 때만 반영
+  React.useEffect(() => {
+    if (ref.current && !isFocused.current) {
+      ref.current.value = value || "";
+      committed.current = value || "";
     }
   }, [value]);
 
   return (
     <textarea
-      value={local}
+      ref={ref}
       rows={2}
       disabled={disabled}
       placeholder={placeholder}
       style={{ width:"100%", minWidth:"150px", resize:"vertical", fontSize:"12px" }}
+      onFocus={() => { isFocused.current = true; }}
+      onBlur={() => {
+        isFocused.current = false;
+        isComposing.current = false;
+        const v = ref.current ? ref.current.value : "";
+        if (v !== committed.current) { committed.current = v; onChange(v); }
+      }}
       onCompositionStart={() => { isComposing.current = true; }}
       onCompositionEnd={e => {
         isComposing.current = false;
         const v = e.target.value;
-        setLocal(v);
-        lastCommitted.current = v;
-        onChange(v);
+        committed.current = v; onChange(v);
       }}
       onChange={e => {
-        const v = e.target.value;
-        setLocal(v);
         if (!isComposing.current) {
-          lastCommitted.current = v;
-          onChange(v);
-        }
-      }}
-      onBlur={e => {
-        // 블러 시 최종 동기화
-        if (e.target.value !== lastCommitted.current) {
-          lastCommitted.current = e.target.value;
-          onChange(e.target.value);
+          const v = e.target.value;
+          committed.current = v; onChange(v);
         }
       }}
     />
@@ -1713,7 +1721,7 @@ function JudgeScoringPanel({ tournament, scores, setScores, currentUser, users, 
   const [selRound, setSelRound]     = useState("");
   const [localScores, setLocalScores] = useState({});
   const [submitted, setSubmitted]   = useState(false);
-  const [blurOpposite, setBlurOpposite] = useState(false);
+  const [genderFilter, setGenderFilter] = useState("all");
 
   const judgeId    = currentUser.id;
   const judgeUsers = (users||[]).filter(u => u.role === "judge");
@@ -1786,15 +1794,23 @@ function JudgeScoringPanel({ tournament, scores, setScores, currentUser, users, 
           <span style={{ color:"var(--gold)", fontSize:"12px", fontWeight:700, borderLeft:"3px solid var(--gold)", paddingLeft:"7px" }}>론다</span>
           {(cat.rounds||[]).map(r => (
             <button key={r.id} className={`pill-tab ${selRound===r.id?"active":""}`}
-              onClick={() => { setSelRound(r.id); setLocalScores({}); }}>
+              onClick={() => { setSelRound(r.id); setLocalScores({}); setGenderFilter("all"); }}>
               {r.title}
             </button>
           ))}
           {isJJ && (
-            <label style={{ display:"flex", alignItems:"center", gap:"6px", fontSize:"12px", color:"var(--muted)", cursor:"pointer", marginLeft:"10px" }}>
-              <input type="checkbox" checked={blurOpposite} onChange={e => setBlurOpposite(e.target.checked)} />
-              {t("blurOpposite")}
-            </label>
+            <div style={{ display:"flex", alignItems:"center", gap:"5px", marginLeft:"10px" }}>
+              <span style={{ fontSize:"11px", color:"var(--muted)" }}>심사 대상:</span>
+              {[["all","전체"],["male","남자만"],["female","여자만"]].map(([v,lbl]) => (
+                <button key={v} onClick={() => setGenderFilter(v)}
+                  style={{ padding:"3px 10px", borderRadius:"20px", fontSize:"11px", fontWeight:600, cursor:"pointer",
+                    border:"1px solid var(--border)",
+                    background: genderFilter===v ? "var(--red)" : "var(--bg3)",
+                    color: genderFilter===v ? "#fff" : "var(--muted)" }}>
+                  {lbl}
+                </button>
+              ))}
+            </div>
           )}
         </div>
       )}
@@ -1860,14 +1876,11 @@ function JudgeScoringPanel({ tournament, scores, setScores, currentUser, users, 
                   const avgScore = calcCoupleAvg(scores, roundKey, p.id, judgeUsers, cat.scoringType, criteria, avgMode, calcMode);
                   const outlier  = tournament.outlierEnabled !== false && tournament.showAvgToJudge !== false &&
                     isOutlierScore(myScore, judgeId, scores, roundKey, p.id, judgeUsers, cat.scoringType, criteria, tournament.outlierThreshold);
-                  const blur     = isJJ && blurOpposite && (
-                    (currentUser.jIdx % 2 === 0 && p.gender === "female") ||
-                    (currentUser.jIdx % 2 === 1 && p.gender === "male")
-                  );
+                  const filterHidden = isJJ && genderFilter !== "all" && p.gender !== genderFilter;
                   const disabled = isDirectorLocked || isJudgeLocked;
 
                   return (
-                    <tr key={p.id} className={blur?"blurred":""}>
+                    <tr key={p.id} style={{ display: filterHidden ? "none" : "" }}>
                       <td style={{ fontWeight:700, color:"var(--gold)", fontSize:"15px" }}>{p.number}</td>
                       <td>
                         <div style={{ fontWeight:500 }}>{p.nickname}</div>
@@ -2182,7 +2195,7 @@ function DirectorPanel({ tournament, scores, setTournament, users, judgeLocks, s
                 📢 공지
               </button>
               {!isDirectorLocked && (() => {
-                const unassigned = cat ? findUnassignedParticipants(cat, round.stageKey, tournament) : [];
+                const unassigned = cat ? findUnassignedParticipants(cat, round.stageKey, tournament, directorLocks) : [];
                 const hasUnassigned = unassigned.length > 0;
                 return (
                   <div style={{ display:"flex", flexDirection:"column", gap:"4px", alignItems:"flex-end" }}>
