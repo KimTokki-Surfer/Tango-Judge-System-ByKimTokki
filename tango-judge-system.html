@@ -28,6 +28,7 @@
   <script type="text/babel">
     const { useState, useMemo } = React;
 
+const APP_VERSION = "v1.0.0";
 /* ════════════════════════════════════════════
    STYLE
 ════════════════════════════════════════════ */
@@ -99,7 +100,7 @@ const TR = {
     memoPlaceholder:"메모 입력", submitAll:"전체 제출", submitted:"제출완료",
     rank:"순위", avg:"평균", finalized:"확정", advancing:"진출",
     maleShort:"리더", femaleShort:"팔로워", couple:"커플", filterAll:"전체", filterMale:"리더만", filterFemale:"팔로워만",
-    selectRound:"론다선택", liveTitle:"라이브 채점",
+    selectRound:"론다선택", liveTitle:"라이브 채점", role:"역할",
   },
   en: {
     appTitle:"Tango Judge System", login:"Login", password:"Password",
@@ -112,7 +113,7 @@ const TR = {
     memoPlaceholder:"Enter memo", submitAll:"Submit All", submitted:"Submitted",
     rank:"Rank", avg:"Avg", finalized:"Finalized", advancing:"Advancing",
     maleShort:"Leader", femaleShort:"Follower", couple:"Couple", filterAll:"All", filterMale:"Leaders", filterFemale:"Followers",
-    selectRound:"Select Round", liveTitle:"Live Scoring",
+    selectRound:"Select Round", liveTitle:"Live Scoring", role:"Role",
   },
   es: {
     appTitle:"Sistema de Jueces", login:"Iniciar", password:"Contraseña",
@@ -125,7 +126,7 @@ const TR = {
     memoPlaceholder:"Escribir nota", submitAll:"Enviar Todo", submitted:"Enviado",
     rank:"Pos.", avg:"Prom.", finalized:"Finalizado", advancing:"Avanzando",
     maleShort:"Líder", femaleShort:"Seguidor", couple:"Pareja", filterAll:"Todo", filterMale:"Solo Líderes", filterFemale:"Solo Seguidores",
-    selectRound:"Seleccionar Ronda", liveTitle:"Puntuación en Vivo",
+    selectRound:"Seleccionar Ronda", liveTitle:"Puntuación en Vivo", role:"Rol",
   },
   ja: {
     appTitle:"タンゴ審判システム", login:"ログイン", password:"パスワード",
@@ -138,7 +139,7 @@ const TR = {
     memoPlaceholder:"メモ入力", submitAll:"全て提出", submitted:"提出済",
     rank:"順位", avg:"平均", finalized:"確定", advancing:"進出",
     maleShort:"リーダー", femaleShort:"フォロワー", couple:"カップル", filterAll:"全員", filterMale:"リーダーのみ", filterFemale:"フォロワーのみ",
-    selectRound:"ラウンド選択", liveTitle:"ライブ採点",
+    selectRound:"ラウンド選択", liveTitle:"ライブ採点", role:"役割",
   },
   zh: {
     appTitle:"探戈裁判系统", login:"登录", password:"密码",
@@ -151,7 +152,7 @@ const TR = {
     memoPlaceholder:"输入备注", submitAll:"全部提交", submitted:"已提交",
     rank:"排名", avg:"均", finalized:"已确定", advancing:"晋级",
     maleShort:"领导", femaleShort:"跟随", couple:"情侣", filterAll:"全部", filterMale:"仅领导", filterFemale:"仅跟随",
-    selectRound:"选择轮次", liveTitle:"实时评分",
+    selectRound:"选择轮次", liveTitle:"实时评分", role:"角色",
   },
   "zh-TW": {
     appTitle:"探戈裁判系統", login:"登入", password:"密碼",
@@ -164,7 +165,7 @@ const TR = {
     memoPlaceholder:"輸入備註", submitAll:"全部提交", submitted:"已提交",
     rank:"排名", avg:"均", finalized:"已確定", advancing:"晉級",
     maleShort:"領舞", femaleShort:"跟舞", couple:"伴侶", filterAll:"全部", filterMale:"僅領舞", filterFemale:"僅跟舞",
-    selectRound:"選擇輪次", liveTitle:"即時評分",
+    selectRound:"選擇輪次", liveTitle:"即時評分", role:"角色",
   },
 };
 
@@ -473,6 +474,11 @@ function LoginScreen({ users, onLogin, lang, setLang, t }) {
           Tango Judge System
         </h1>
         <p style={{ color:"var(--muted)", fontSize:"12px" }}>© 2026 김동욱 / 김토끼</p>
+        <p style={{ color:"var(--gold)", fontSize:"11px", marginTop:"4px",
+          background:"rgba(201,168,76,.1)", border:"1px solid rgba(201,168,76,.2)",
+          borderRadius:"20px", padding:"2px 12px", display:"inline-block" }}>
+          {APP_VERSION}
+        </p>
       </div>
 
       <div className="card" style={{ width:"100%", maxWidth:"360px", display:"flex", flexDirection:"column", gap:"14px" }}>
@@ -1868,7 +1874,7 @@ function JudgeScoringPanel({ tournament, scores, setScores, currentUser, users, 
                 <tr>
                   <th style={{ minWidth:"50px" }}>{t("entryNo")}</th>
                   <th style={{ minWidth:"130px" }}>{t("nickname")}</th>
-                  {isJJ && <th>{t("gender")}</th>}
+                  {isJJ && <th>{t("role")}</th>}
                   <th style={{ minWidth:"170px" }}>{t("memo")}</th>
                   {criteria.length > 0
                     ? criteria.map(k => <th key={k} style={{ minWidth:"75px" }}>{k}</th>)
@@ -1918,18 +1924,18 @@ function JudgeScoringPanel({ tournament, scores, setScores, currentUser, users, 
                       {criteria.length > 0
                         ? criteria.map(k => (
                             <td key={k}>
-                              <input type="number" min={0} max={10} step={0.5}
+                              <input type="text" inputMode="decimal" pattern="[0-9]*\.?[0-9]*"
                                 value={entry.criteria?.[k] ?? ""} disabled={disabled}
-                                onChange={e => setCrit(p.id, k, e.target.value)}
-                                className="score-input" placeholder="–" inputMode="decimal" />
+                                onChange={e => { const v=e.target.value; if(v===""||/^\d*\.?\d*$/.test(v)&&Number(v)<=10) setCrit(p.id,k,v); }}
+                                className="score-input" placeholder="–" />
                             </td>
                           ))
                         : (
                           <td>
-                            <input type="number" min={0} max={10} step={0.5}
+                            <input type="text" inputMode="decimal" pattern="[0-9]*\.?[0-9]*"
                               value={entry.simple ?? ""} disabled={disabled}
-                              onChange={e => setSimple(p.id, e.target.value)}
-                              className="score-input" placeholder="–" inputMode="decimal" />
+                              onChange={e => { const v=e.target.value; if(v===""||/^\d*\.?\d*$/.test(v)&&Number(v)<=10) setSimple(p.id,v); }}
+                              className="score-input" placeholder="–" />
                           </td>
                         )
                       }
