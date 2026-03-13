@@ -21,9 +21,7 @@
     });
     window.__firebaseDB = firebase.database();
   </script>
-  <style>
-    @media print { nav,.no-print{display:none!important} body{background:#fff!important;color:#000!important} }
-  </style>
+  <style>@media print{nav,.no-print{display:none!important}body{background:#fff!important;color:#000!important}}</style>
 </head>
 <body>
   <div id="root"></div>
@@ -372,27 +370,45 @@ class ErrorBoundary extends React.Component {
 // 이후: 이전 스테이지 확정 진출자
 function getEligibleForStage(cat, stageKey, tournament, directorLocks) {
   if (!cat) return [];
-  const stages  = cat.stages || [];
-  const stageIdx = stages.findIndex(s => s.stageKey === stageKey);
-  if (stageIdx <= 0) {
-    // 첫 번째 스테이지 = 종목 전체 참가자
-    return getCatParticipants(tournament, cat.id);
-  }
-  // 이전 스테이지의 advancedIds 수집
-  const prevStage = stages[stageIdx - 1];
   const toArr = (v) => {
     if (!v) return [];
     if (Array.isArray(v)) return v;
     if (typeof v === "object") return Object.values(v);
     return [];
   };
+  const stages   = cat.stages || [];
+  const stageIdx = stages.findIndex(s => s.stageKey === stageKey);
+
+  // 첫 번째 스테이지(또는 못 찾으면) = 종목 전체 참가자
+  if (stageIdx <= 0) {
+    return getCatParticipants(tournament, cat.id);
+  }
+
+  const prevStage = stages[stageIdx - 1];
+
+  // 1순위: 스테이지 레벨 advancedIds (confirmStageAdv가 설정)
+  const stageAdvIds = toArr(prevStage.advancedIds).filter(Boolean);
+  if (stageAdvIds.length > 0) {
+    return stageAdvIds.map(id => (tournament.participants||[]).find(p => p.id===id)).filter(Boolean);
+  }
+
+  // 2순위: 론다 레벨 advancedIds 수집 (이전 방식 호환)
   const prevRounds = (cat.rounds || []).filter(r =>
     r.stageKey === prevStage.stageKey &&
     (r.finalized || (directorLocks && directorLocks[r.id]))
   );
-  const advIds = new Set(prevRounds.flatMap(r => toArr(r.advancedIds)).filter(Boolean));
-  if (!advIds.size) return [];
-  return [...advIds].map(id => (tournament.participants||[]).find(p => p.id===id)).filter(Boolean);
+  const roundAdvIds = new Set(prevRounds.flatMap(r => toArr(r.advancedIds)).filter(Boolean));
+  if (roundAdvIds.size > 0) {
+    return [...roundAdvIds].map(id => (tournament.participants||[]).find(p => p.id===id)).filter(Boolean);
+  }
+
+  // 3순위 폴백: 이전 스테이지가 확정됐는데 진출자 데이터가 없으면 전원 표시
+  // (예외 상황 대비 — 실제로는 빈 배열이 더 안전하나 UX상 전원 표시)
+  const prevFinalized = prevStage.finalized ||
+    (cat.rounds || []).some(r => r.stageKey === prevStage.stageKey && (r.finalized || (directorLocks && directorLocks[r.id])));
+  if (!prevFinalized) return []; // 이전 스테이지 미확정 → 아무것도 배치 불가
+  // 이전 스테이지는 확정됐지만 진출자 데이터 없음 → 전원 표시 (데이터 유실 대비)
+  return getCatParticipants(tournament, cat.id);
 }
 
 // 첫 스테이지에서 종목 배정 참가자 중 어떤 론다에도 없는 참가자 찾기
@@ -1196,17 +1212,23 @@ function SetupPanel({ tournament, setTournament, users, setUsers, directorLocks,
                               <div style={{ marginTop:"10px" }}>
                                 {(() => {
                                   const eligible = getEligibleForStage(cat, stage.stageKey, tournament, directorLocks);
-                                  const notEligible = catPs.filter(p => !eligible.find(e=>e.id===p.id));
+                                  const isNotFirstStage = stage.stageKey !== (cat.stages||[])[0]?.stageKey;
+                                  const notEligible = isNotFirstStage ? catPs.filter(p => !eligible.find(e=>e.id===p.id)) : [];
                                   return (
                                     <>
                                       <p style={{ fontSize:"11px", color:"var(--muted)", marginBottom:"5px" }}>
                                         클릭으로 배정/해제 | 🔒 = 다른 론다에 배정됨
-                                        {stage.stageKey !== (cat.stages||[])[0]?.stageKey && (
+                                        {isNotFirstStage && (
                                           <span style={{ color:"var(--blue)", marginLeft:"8px" }}>
-                                            ※ 이전 스테이지 진출자만 배치 가능
+                                            ※ 이전 스테이지 진출자만 배치 가능 ({eligible.length}명)
                                           </span>
                                         )}
                                       </p>
+                                      {isNotFirstStage && eligible.length === 0 && (
+                                        <div style={{ padding:"8px 12px", background:"rgba(230,126,34,.1)", border:"1px solid var(--warn)", borderRadius:"6px", fontSize:"12px", color:"var(--warn)", marginBottom:"6px" }}>
+                                          ⚠ 진출자 데이터가 없습니다. 감독관 화면에서 진출자 확정을 먼저 진행해주세요.
+                                        </div>
+                                      )}
                                       <div style={{ display:"flex", flexWrap:"wrap", gap:"5px" }}>
                                         {eligible.map(p => {
                                           const inThis  = (r.coupleIds||[]).includes(p.id);
