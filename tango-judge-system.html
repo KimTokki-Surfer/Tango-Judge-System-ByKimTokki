@@ -64,7 +64,7 @@ const STYLE = `
   .pill-tab { display:inline-flex; align-items:center; padding:6px 14px; border-radius:20px; font-size:12px; font-weight:600; cursor:pointer; border:1px solid var(--border); background:var(--bg3); color:var(--muted); transition:all .15s; white-space:nowrap; }
   .pill-tab:hover { color:var(--text); }
   .pill-tab.active { background:var(--red); color:#fff; border-color:var(--red); }
-  .tag { display:inline-flex; align-items:center; padding:2px 8px; border-radius:12px; font-size:11px; font-weight:600; }
+  .tag { display:inline-flex; align-items:center; padding:2px 8px; border-radius:12px; font-size:11px; font-weight:600; white-space:nowrap; }
   .tag-gold { background:rgba(201,168,76,.12); color:var(--gold); border:1px solid rgba(201,168,76,.25); }
   .tag-red { background:rgba(231,76,60,.12); color:var(--red2); border:1px solid rgba(231,76,60,.25); }
   .tag-green { background:rgba(39,174,96,.12); color:var(--green2); border:1px solid rgba(39,174,96,.25); }
@@ -85,7 +85,7 @@ const TR = {
     confirm:"확인", cancel:"취소", save:"저장",
     setup:"대회설정", pmgmt:"참가자관리", scoring:"채점",
     director:"감독관", live:"라이브", export:"내보내기", logout:"로그아웃",
-    entryNo:"등번호", nickname:"닉네임", gender:"성별",
+    entryNo:"등번호", nickname:"닉네임", gender:"구분",
     score:"점수", avgScore:"평균", diff:"차이", memo:"메모",
     memoPlaceholder:"메모 입력", submitAll:"전체 제출", submitted:"제출완료",
     rank:"순위", avg:"평균", finalized:"확정", advancing:"진출",
@@ -103,7 +103,7 @@ const TR = {
     confirm:"Confirm", cancel:"Cancel", save:"Save",
     setup:"Setup", pmgmt:"Participants", scoring:"Scoring",
     director:"Director", live:"Live", export:"Export", logout:"Logout",
-    entryNo:"No.", nickname:"Name", gender:"Gender",
+    entryNo:"No.", nickname:"Name", gender:"Type",
     score:"Score", avgScore:"Average", diff:"Diff", memo:"Memo",
     memoPlaceholder:"Enter memo", submitAll:"Submit All", submitted:"Submitted",
     rank:"Rank", avg:"Avg", finalized:"Finalized", advancing:"Advancing",
@@ -121,7 +121,7 @@ const TR = {
     confirm:"Confirmar", cancel:"Cancelar", save:"Guardar",
     setup:"Configuración", pmgmt:"Participantes", scoring:"Puntuación",
     director:"Director", live:"En Vivo", export:"Exportar", logout:"Salir",
-    entryNo:"Núm.", nickname:"Nombre", gender:"Género",
+    entryNo:"Núm.", nickname:"Nombre", gender:"Tipo",
     score:"Puntos", avgScore:"Promedio", diff:"Dif.", memo:"Nota",
     memoPlaceholder:"Escribir nota", submitAll:"Enviar Todo", submitted:"Enviado",
     rank:"Pos.", avg:"Prom.", finalized:"Finalizado", advancing:"Avanzando",
@@ -139,7 +139,7 @@ const TR = {
     confirm:"確認", cancel:"キャンセル", save:"保存",
     setup:"大会設定", pmgmt:"参加者", scoring:"採点",
     director:"ディレクター", live:"ライブ", export:"エクスポート", logout:"ログアウト",
-    entryNo:"番号", nickname:"名前", gender:"性別",
+    entryNo:"番号", nickname:"名前", gender:"区分",
     score:"点数", avgScore:"平均", diff:"差", memo:"メモ",
     memoPlaceholder:"メモ入力", submitAll:"全て提出", submitted:"提出済",
     rank:"順位", avg:"平均", finalized:"確定", advancing:"進出",
@@ -157,7 +157,7 @@ const TR = {
     confirm:"确认", cancel:"取消", save:"保存",
     setup:"赛事设置", pmgmt:"参赛者", scoring:"评分",
     director:"总监", live:"实时", export:"导出", logout:"退出",
-    entryNo:"号码", nickname:"姓名", gender:"性别",
+    entryNo:"号码", nickname:"姓名", gender:"类型",
     score:"分数", avgScore:"平均", diff:"差值", memo:"备注",
     memoPlaceholder:"输入备注", submitAll:"全部提交", submitted:"已提交",
     rank:"排名", avg:"均", finalized:"已确定", advancing:"晋级",
@@ -175,7 +175,7 @@ const TR = {
     confirm:"確認", cancel:"取消", save:"儲存",
     setup:"賽事設定", pmgmt:"參賽者", scoring:"評分",
     director:"總監", live:"即時", export:"匯出", logout:"登出",
-    entryNo:"號碼", nickname:"姓名", gender:"性別",
+    entryNo:"號碼", nickname:"姓名", gender:"類型",
     score:"分數", avgScore:"平均", diff:"差值", memo:"備註",
     memoPlaceholder:"輸入備註", submitAll:"全部提交", submitted:"已提交",
     rank:"排名", avg:"均", finalized:"已確定", advancing:"晉級",
@@ -229,8 +229,12 @@ const INIT_USERS = [
 function getDisplayName(p, isJJ) {
   if (!p) return "–";
   if (isJJ) return p.leaderName || p.nickname || String(p.number);
-  if (p.leaderName && p.followerName) return p.leaderName + " y " + p.followerName;
-  if (p.leaderName) return p.leaderName;
+  if (p.gender === "couple") {
+    if (p.leaderName && p.followerName) return p.leaderName + " y " + p.followerName;
+    if (p.leaderName) return p.leaderName;
+    if (p.followerName) return p.followerName;
+    return String(p.number);
+  }
   return p.nickname || String(p.number);
 }
 // [기능5] 메모 다음 라운드 승계
@@ -685,11 +689,11 @@ function ParticipantMgmtPanel({tournament,setTournament,t}) {
   const dragMode=React.useRef("add");
   const [rangeCat,setRangeCat]=useState(((tournament.categories||[])[0]||{}).id||""),[rangeFrom,setRangeFrom]=useState(""),[rangeTo,setRangeTo]=useState(""),[rangeAction,setRangeAction]=useState("add");
   const participants=tournament.participants||[],categories=tournament.categories||[];
-  const filtered=participants.filter(p=>!filter||p.number.includes(filter)||(p.nickname||"").toLowerCase().includes(filter.toLowerCase()));
+  const filtered=participants.filter(p=>!filter||p.number.includes(filter)||(p.nickname||"").toLowerCase().includes(filter.toLowerCase())||(p.leaderName||"").toLowerCase().includes(filter.toLowerCase())||(p.followerName||"").toLowerCase().includes(filter.toLowerCase()));
   const deletePs=(ids)=>{const s=new Set(ids);setTournament(prev=>({...prev,participants:(prev.participants||[]).filter(p=>!s.has(p.id)),categories:(prev.categories||[]).map(c=>({...c,participantIds:(c.participantIds||[]).filter(id=>!s.has(id)),rounds:(c.rounds||[]).map(r=>({...r,coupleIds:(r.coupleIds||[]).filter(id=>!s.has(id))}))}))}));setSelected(new Set());};
-  const addP=()=>{if(!newNo.trim())return;const p={id:uid(),number:newNo.trim(),nickname:newNick.trim(),gender:newGender,...(newGender==="couple"&&(newLeader||newFollower)?{leaderName:newLeader.trim(),followerName:newFollower.trim()}:{})};setTournament(prev=>({...prev,participants:[...(prev.participants||[]),p]}));setNewNo("");setNewNick("");setNewLeader("");setNewFollower("");};
+  const addP=()=>{if(!newNo.trim())return;const p={id:uid(),number:newNo.trim(),gender:newGender,...(newGender==="couple"?{leaderName:newLeader.trim(),followerName:newFollower.trim()}:{nickname:newNick.trim()})};setTournament(prev=>({...prev,participants:[...(prev.participants||[]),p]}));setNewNo("");setNewNick("");setNewLeader("");setNewFollower("");};
   const bulkGenerate=()=>{const from=parseInt(bulkFrom),to=parseInt(bulkTo);if(isNaN(from)||isNaN(to)||from>to)return;if(to-from>499){alert("최대 500명");return;}const existing=new Set(participants.map(p=>p.number));const newOnes=[];for(let n=from;n<=to;n++){const num=String(n);if(!existing.has(num))newOnes.push({id:uid(),number:num,nickname:bulkPrefix?`${bulkPrefix}${n}`:"",gender:bulkGender});}if(!newOnes.length){alert("이미 모두 등록된 번호입니다");return;}setTournament(prev=>({...prev,participants:[...(prev.participants||[]),...newOnes]}));setShowBulk(false);setBulkFrom("");setBulkTo("");setBulkPrefix("");alert(`${newOnes.length}명 생성 완료!`);};
-  const saveEdit=()=>{setTournament(prev=>({...prev,participants:(prev.participants||[]).map(p=>p.id===editingId?{...p,number:editNo.trim(),nickname:editNick.trim(),gender:editGender,...(editGender==="couple"?{leaderName:editLeader.trim(),followerName:editFollower.trim()}:{leaderName:undefined,followerName:undefined})}:p)}));setEditingId(null);};
+  const saveEdit=()=>{setTournament(prev=>({...prev,participants:(prev.participants||[]).map(p=>p.id===editingId?{...p,number:editNo.trim(),gender:editGender,...(editGender==="couple"?{leaderName:editLeader.trim(),followerName:editFollower.trim(),nickname:undefined}:{nickname:editNick.trim(),leaderName:undefined,followerName:undefined})}:p)}));setEditingId(null);};
   const rowMouseDown=(pid,idx,e)=>{if(["BUTTON","INPUT","SELECT"].includes(e.target.tagName))return;e.preventDefault();setIsDragging(true);setDragStart(idx);dragMode.current=selected.has(pid)?"remove":"add";setSelected(prev=>{const n=new Set(prev);dragMode.current==="add"?n.add(pid):n.delete(pid);return n;});};
   const rowMouseEnter=(pid,idx)=>{if(!isDragging||dragStart===null)return;const lo=Math.min(dragStart,idx),hi=Math.max(dragStart,idx);setSelected(prev=>{const n=new Set(prev);filtered.forEach((p,i)=>{if(i>=lo&&i<=hi)dragMode.current==="add"?n.add(p.id):n.delete(p.id);});return n;});};
   const mouseUp=()=>{setIsDragging(false);setDragStart(null);};
@@ -723,8 +727,8 @@ function ParticipantMgmtPanel({tournament,setTournament,t}) {
               <thead><tr>
                 <th style={{width:"32px"}}><input type="checkbox" checked={filtered.length>0&&filtered.every(p=>selected.has(p.id))} onChange={e=>setSelected(e.target.checked?new Set(filtered.map(p=>p.id)):new Set())} /></th>
                 <th style={{width:"70px"}}>등번호</th>
-                <th>닉네임 / 리더 y 팔로워</th>
-                <th style={{width:"75px"}}>성별</th>
+                <th>이름</th>
+                <th style={{width:"90px"}}>{t("gender")}</th>
                 <th>참가 종목</th>
                 <th style={{width:"100px"}}></th>
               </tr></thead>
@@ -740,14 +744,17 @@ function ParticipantMgmtPanel({tournament,setTournament,t}) {
                       <td>{isEditing?<input value={editNo} onChange={e=>setEditNo(e.target.value)} style={{width:"70px"}} />:<span style={{color:isSel?"var(--red2)":"var(--gold)",fontWeight:700,fontSize:"15px"}}>{p.number}</span>}</td>
                       <td>{isEditing?(
                         <div style={{display:"flex",flexDirection:"column",gap:"4px"}}>
-                          <input value={editNick} onChange={e=>setEditNick(e.target.value)} placeholder="닉네임" style={{width:"160px"}} />
-                          {editGender==="couple"&&<div style={{display:"flex",gap:"5px"}}><input value={editLeader} onChange={e=>setEditLeader(e.target.value)} placeholder={t("leaderNamePH")} style={{width:"120px",fontSize:"12px"}} /><span style={{color:"var(--muted)",alignSelf:"center",fontSize:"12px"}}>y</span><input value={editFollower} onChange={e=>setEditFollower(e.target.value)} placeholder={t("followerNamePH")} style={{width:"120px",fontSize:"12px"}} /></div>}
+                          {editGender==="couple"
+                            ?<div style={{display:"flex",gap:"5px",alignItems:"center"}}>
+                                <input value={editLeader} onChange={e=>setEditLeader(e.target.value)} placeholder={t("leaderNamePH")} style={{flex:1,minWidth:"100px",fontSize:"12px"}} />
+                                <span style={{color:"var(--muted)",fontSize:"12px",flexShrink:0}}>y</span>
+                                <input value={editFollower} onChange={e=>setEditFollower(e.target.value)} placeholder={t("followerNamePH")} style={{flex:1,minWidth:"100px",fontSize:"12px"}} />
+                              </div>
+                            :<input value={editNick} onChange={e=>setEditNick(e.target.value)} placeholder="닉네임" style={{width:"160px"}} />
+                          }
                         </div>
                       ):(
-                        <div>
-                          {p.leaderName&&p.followerName?<span>{p.leaderName} <span style={{color:"var(--muted)"}}>y</span> {p.followerName}</span>:p.leaderName||p.nickname||<span style={{color:"var(--muted)",fontSize:"12px",fontStyle:"italic"}}>이름 없음</span>}
-                          {p.nickname&&(p.leaderName||p.followerName)&&<span style={{fontSize:"11px",color:"var(--muted)",marginLeft:"6px"}}>({p.nickname})</span>}
-                        </div>
+                        <span style={{fontWeight:500}}>{getDisplayName(p,false)||<span style={{color:"var(--muted)",fontSize:"12px",fontStyle:"italic"}}>이름 없음</span>}</span>
                       )}</td>
                       <td>{isEditing?<select value={editGender} onChange={e=>{setEditGender(e.target.value);if(e.target.value!=="couple"){setEditLeader("");setEditFollower("");}}} style={{padding:"4px 6px",fontSize:"12px",width:"auto"}}>{[["couple",t("couple")],["male",t("maleShort")],["female",t("femaleShort")]].map(([v,lbl])=><option key={v} value={v}>{lbl}</option>)}</select>:<span className={`tag ${p.gender==="male"?"tag-muted":p.gender==="female"?"tag-red":"tag-gold"}`} style={{fontSize:"10px"}}>{p.gender==="male"?t("maleShort"):p.gender==="female"?t("femaleShort"):t("couple")}</span>}</td>
                       <td><div style={{display:"flex",gap:"4px",flexWrap:"wrap"}}>{assignedCats.length===0?<span style={{fontSize:"11px",color:"var(--muted)"}}>미배정</span>:assignedCats.map(c=><span key={c.id} className="tag tag-gold" style={{fontSize:"10px"}}>{c.name}</span>)}</div></td>
@@ -759,20 +766,21 @@ function ParticipantMgmtPanel({tournament,setTournament,t}) {
             </table>
           </div>
           <div style={{padding:"10px 14px",borderTop:"1px solid var(--border)",background:"var(--bg3)"}}>
-            <div style={{display:"flex",gap:"7px",flexWrap:"wrap",alignItems:"center",marginBottom:newGender==="couple"?"8px":"0"}}>
+            <div style={{display:"flex",gap:"7px",flexWrap:"wrap",alignItems:"center"}}>
               <span style={{fontSize:"12px",color:"var(--muted)",minWidth:"55px"}}>새 참가자</span>
               <input value={newNo} onChange={e=>setNewNo(e.target.value)} placeholder="등번호" style={{width:"80px"}} onKeyDown={e=>e.key==="Enter"&&addP()} />
-              <input value={newNick} onChange={e=>setNewNick(e.target.value)} placeholder="닉네임" style={{flex:1,minWidth:"100px"}} onKeyDown={e=>e.key==="Enter"&&addP()} />
+              {newGender==="couple"?(
+                <>
+                  <input value={newLeader} onChange={e=>setNewLeader(e.target.value)} placeholder={t("leaderNamePH")} style={{flex:1,minWidth:"110px",fontSize:"13px"}} onKeyDown={e=>e.key==="Enter"&&addP()} />
+                  <span style={{color:"var(--muted)",fontSize:"13px",flexShrink:0}}>y</span>
+                  <input value={newFollower} onChange={e=>setNewFollower(e.target.value)} placeholder={t("followerNamePH")} style={{flex:1,minWidth:"110px",fontSize:"13px"}} onKeyDown={e=>e.key==="Enter"&&addP()} />
+                </>
+              ):(
+                <input value={newNick} onChange={e=>setNewNick(e.target.value)} placeholder="닉네임" style={{flex:1,minWidth:"120px"}} onKeyDown={e=>e.key==="Enter"&&addP()} />
+              )}
               <select value={newGender} onChange={e=>setNewGender(e.target.value)} style={{padding:"7px 10px",width:"auto"}}>{[["couple",t("couple")],["male",t("maleShort")],["female",t("femaleShort")]].map(([v,lbl])=><option key={v} value={v}>{lbl}</option>)}</select>
               <button className="btn btn-ghost btn-sm" style={{borderColor:"var(--gold)",color:"var(--gold)"}} onClick={addP}>+ 추가</button>
             </div>
-            {newGender==="couple"&&(
-              <div style={{display:"flex",gap:"7px",flexWrap:"wrap",alignItems:"center",paddingLeft:"62px"}}>
-                <input value={newLeader} onChange={e=>setNewLeader(e.target.value)} placeholder={t("leaderNamePH")} style={{flex:1,minWidth:"120px",fontSize:"12px"}} onKeyDown={e=>e.key==="Enter"&&addP()} />
-                <span style={{color:"var(--muted)",fontSize:"12px"}}>y</span>
-                <input value={newFollower} onChange={e=>setNewFollower(e.target.value)} placeholder={t("followerNamePH")} style={{flex:1,minWidth:"120px",fontSize:"12px"}} onKeyDown={e=>e.key==="Enter"&&addP()} />
-              </div>
-            )}
           </div>
         </div>
       )}
@@ -853,6 +861,8 @@ function JudgeScoringPanel({tournament,scores,setScores,currentUser,users,judgeL
   const [genderFilter,setGenderFilter]=useState("all");
   const [imeLock,setImeLock]=useState(false); // [기능4]
   const judgeId=currentUser.id;
+  // [SYNC FIX] Firebase 업데이트 시 selCat 자동 보정
+  React.useEffect(()=>{const cats=tournament.categories||[];if(cats.length>0&&!cats.find(c=>c.id===selCat)){setSelCat(cats[0].id);setSelRound("");setLocalScores&&setLocalScores({});}}, [tournament]);
   const judgeUsers=(users||[]).filter(u=>u.role==="judge");
   const roundKey=selRound;
   const isJudgeLocked=!!(judgeLocks?.[roundKey]?.[judgeId]);
@@ -973,6 +983,8 @@ function DirectorPanel({tournament,scores,setTournament,users,judgeLocks,setJudg
   const [showBroadcast,setShowBroadcast]=useState(false),[broadcastMsg,setBroadcastMsg]=useState("");
   const [showLockConfirm,setShowLockConfirm]=useState(false),[selectedAdv,setSelectedAdv]=useState([]);
   const [showStageAdv,setShowStageAdv]=useState(null);
+  // [SYNC FIX] Firebase 업데이트 시 selCat 자동 보정
+  React.useEffect(()=>{const cats=tournament.categories||[];if(cats.length>0&&!cats.find(c=>c.id===selCat)){setSelCat(cats[0].id);setSelRound("");}}, [tournament]);
   const judgeUsers=(users||[]).filter(u=>u.role==="judge");
   const cat=(tournament.categories||[]).find(c=>c.id===selCat);
   const round=(cat?.rounds||[]).find(r=>r.id===selRound);
@@ -1235,6 +1247,8 @@ function DirectorPanel({tournament,scores,setTournament,users,judgeLocks,setJudg
 function LivePanel({tournament,scores,users,t}) {
   const [selCat,setSelCat]=useState(((tournament.categories||[])[0]||{}).id||"");
   const [selRound,setSelRound]=useState(""),[mode,setMode]=useState("final");
+  // [SYNC FIX] Firebase 업데이트 시 selCat 자동 보정
+  React.useEffect(()=>{const cats=tournament.categories||[];if(cats.length>0&&!cats.find(c=>c.id===selCat)){setSelCat(cats[0].id);setSelRound("");}}, [tournament]);
   const cat=(tournament.categories||[]).find(c=>c.id===selCat);
   const round=(cat?.rounds||[]).find(r=>r.id===selRound);
   const judgeUsers=(users||[]).filter(u=>u.role==="judge");
@@ -1316,6 +1330,8 @@ function LivePanel({tournament,scores,users,t}) {
 /* ══ PublicObserverPanel ══ */
 function PublicObserverPanel({tournament,scores,users,lang,setLang,t}) {
   const [selCat,setSelCat]=useState(((tournament.categories||[])[0]||{}).id||"");
+  // [SYNC FIX] Firebase 업데이트 시 selCat 자동 보정
+  React.useEffect(()=>{const cats=tournament.categories||[];if(cats.length>0&&!cats.find(c=>c.id===selCat)){setSelCat(cats[0].id);}}, [tournament]);
   const cat=(tournament.categories||[]).find(c=>c.id===selCat);
   const judgeUsers=(users||[]).filter(u=>u.role==="judge");
   const catPs=cat?getCatParticipants(tournament,cat.id):[];
