@@ -457,7 +457,7 @@ function SetupPanel({tournament,setTournament,users,setUsers,directorLocks,setDi
   const [newDName,setNewDName]=useState(""),[newDPw,setNewDPw]=useState("");
   const [newAdminPw,setNewAdminPw]=useState(""),[newAdminPw2,setNewAdminPw2]=useState(""),[adminPwMsg,setAdminPwMsg]=useState("");
   const [showResetConfirm,setShowResetConfirm]=useState(false);
-  const cat=(tournament.categories||[]).find(c=>c.id===selCat);
+  const cat=(tournament.categories||[]).find(c=>c.id===selCat)||(tournament.categories||[])[0]||null;
   const judgeUsers=(users||[]).filter(u=>u.role==="judge"),dirUsers=(users||[]).filter(u=>u.role==="director");
   const visibility=tournament.roundVisibility||{};
   const updTmt=(patch)=>setTournament(prev=>({...prev,...patch}));
@@ -861,15 +861,13 @@ function JudgeScoringPanel({tournament,scores,setScores,currentUser,users,judgeL
   const [genderFilter,setGenderFilter]=useState("all");
   const [imeLock,setImeLock]=useState(false); // [기능4]
   const judgeId=currentUser.id;
-  // [SYNC FIX] Firebase 업데이트 시 selCat 자동 보정
-  React.useEffect(()=>{const cats=tournament.categories||[];if(cats.length>0&&!cats.find(c=>c.id===selCat)){setSelCat(cats[0].id);setSelRound("");setLocalScores&&setLocalScores({});}}, [tournament]);
   const judgeUsers=(users||[]).filter(u=>u.role==="judge");
   const roundKey=selRound;
   const isJudgeLocked=!!(judgeLocks?.[roundKey]?.[judgeId]);
   const isDirectorLocked=!!(directorLocks?.[roundKey]);
   const isImeLang=["ko","ja","zh","zh-TW"].includes(lang); // [기능4]
   const memoLang=imeLock&&isImeLang?(lang==="ko"?"ko":lang==="ja"?"ja":"zh"):undefined;
-  const cat=(tournament.categories||[]).find(c=>c.id===selCat);
+  const cat=(tournament.categories||[]).find(c=>c.id===selCat)||(tournament.categories||[])[0]||null;
   const round=(cat?.rounds||[]).find(r=>r.id===selRound);
   const catPs=cat?getCatParticipants(tournament,cat.id):[];
   const couples=round?catPs.filter(p=>(round.coupleIds||[]).includes(p.id)):[];
@@ -890,7 +888,7 @@ function JudgeScoringPanel({tournament,scores,setScores,currentUser,users,judgeL
   return(
     <div style={{padding:"20px",maxWidth:"1100px",margin:"0 auto",display:"flex",flexDirection:"column",gap:"12px"}}>
       <div style={{display:"flex",gap:"7px",flexWrap:"wrap"}}>
-        {(tournament.categories||[]).map(c=><button key={c.id} className={`pill-tab ${selCat===c.id?"active":""}`} onClick={()=>{setSelCat(c.id);setSelRound("");setLocalScores({});}}>{c.name}</button>)}
+        {(tournament.categories||[]).map(c=><button key={c.id} className={`pill-tab ${cat?.id===c.id?"active":""}`} onClick={()=>{setSelCat(c.id);setSelRound("");setLocalScores({});}}>{c.name}</button>)}
       </div>
       {cat&&(
         <div style={{display:"flex",gap:"7px",flexWrap:"wrap",alignItems:"center"}}>
@@ -983,10 +981,8 @@ function DirectorPanel({tournament,scores,setTournament,users,judgeLocks,setJudg
   const [showBroadcast,setShowBroadcast]=useState(false),[broadcastMsg,setBroadcastMsg]=useState("");
   const [showLockConfirm,setShowLockConfirm]=useState(false),[selectedAdv,setSelectedAdv]=useState([]);
   const [showStageAdv,setShowStageAdv]=useState(null);
-  // [SYNC FIX] Firebase 업데이트 시 selCat 자동 보정
-  React.useEffect(()=>{const cats=tournament.categories||[];if(cats.length>0&&!cats.find(c=>c.id===selCat)){setSelCat(cats[0].id);setSelRound("");}}, [tournament]);
   const judgeUsers=(users||[]).filter(u=>u.role==="judge");
-  const cat=(tournament.categories||[]).find(c=>c.id===selCat);
+  const cat=(tournament.categories||[]).find(c=>c.id===selCat)||(tournament.categories||[])[0]||null;
   const round=(cat?.rounds||[]).find(r=>r.id===selRound);
   const judgeLocksForRound=judgeLocks?.[selRound]||{};
   const isDirectorLocked=!!(directorLocks?.[selRound]);
@@ -1034,7 +1030,7 @@ function DirectorPanel({tournament,scores,setTournament,users,judgeLocks,setJudg
   return(
     <div style={{padding:"20px",maxWidth:"1100px",margin:"0 auto",display:"flex",flexDirection:"column",gap:"12px"}}>
       <div style={{display:"flex",gap:"7px",flexWrap:"wrap"}}>
-        {(tournament.categories||[]).map(c=><button key={c.id} className={`pill-tab ${selCat===c.id?"active":""}`} onClick={()=>{setSelCat(c.id);setSelRound("");}}>{c.name}</button>)}
+        {(tournament.categories||[]).map(c=><button key={c.id} className={`pill-tab ${cat?.id===c.id?"active":""}`} onClick={()=>{setSelCat(c.id);setSelRound("");}}>{c.name}</button>)}
       </div>
       {cat&&(
         <div style={{display:"flex",gap:"6px",flexWrap:"wrap",alignItems:"center"}}>
@@ -1247,9 +1243,7 @@ function DirectorPanel({tournament,scores,setTournament,users,judgeLocks,setJudg
 function LivePanel({tournament,scores,users,t}) {
   const [selCat,setSelCat]=useState(((tournament.categories||[])[0]||{}).id||"");
   const [selRound,setSelRound]=useState(""),[mode,setMode]=useState("final");
-  // [SYNC FIX] Firebase 업데이트 시 selCat 자동 보정
-  React.useEffect(()=>{const cats=tournament.categories||[];if(cats.length>0&&!cats.find(c=>c.id===selCat)){setSelCat(cats[0].id);setSelRound("");}}, [tournament]);
-  const cat=(tournament.categories||[]).find(c=>c.id===selCat);
+  const cat=(tournament.categories||[]).find(c=>c.id===selCat)||(tournament.categories||[])[0]||null;
   const round=(cat?.rounds||[]).find(r=>r.id===selRound);
   const judgeUsers=(users||[]).filter(u=>u.role==="judge");
   const catPs=cat?getCatParticipants(tournament,cat.id):[];
@@ -1330,9 +1324,7 @@ function LivePanel({tournament,scores,users,t}) {
 /* ══ PublicObserverPanel ══ */
 function PublicObserverPanel({tournament,scores,users,lang,setLang,t}) {
   const [selCat,setSelCat]=useState(((tournament.categories||[])[0]||{}).id||"");
-  // [SYNC FIX] Firebase 업데이트 시 selCat 자동 보정
-  React.useEffect(()=>{const cats=tournament.categories||[];if(cats.length>0&&!cats.find(c=>c.id===selCat)){setSelCat(cats[0].id);}}, [tournament]);
-  const cat=(tournament.categories||[]).find(c=>c.id===selCat);
+  const cat=(tournament.categories||[]).find(c=>c.id===selCat)||(tournament.categories||[])[0]||null;
   const judgeUsers=(users||[]).filter(u=>u.role==="judge");
   const catPs=cat?getCatParticipants(tournament,cat.id):[];
   const medals=["🥇","🥈","🥉"];
@@ -1411,7 +1403,7 @@ function PublicObserverPanel({tournament,scores,users,lang,setLang,t}) {
 function ExportPanel({tournament,scores,users,t}) {
   const [selCat,setSelCat]=useState(((tournament.categories||[])[0]||{}).id||"");
   const [selRound,setSelRound]=useState("");
-  const cat=(tournament.categories||[]).find(c=>c.id===selCat);
+  const cat=(tournament.categories||[]).find(c=>c.id===selCat)||(tournament.categories||[])[0]||null;
   const round=(cat?.rounds||[]).find(r=>r.id===selRound);
   const judgeUsers=(users||[]).filter(u=>u.role==="judge");
   const catPs=cat?getCatParticipants(tournament,cat.id):[];
@@ -1486,7 +1478,13 @@ function App() {
     return()=>{refs.forEach(r=>r.off("value"));clearTimeout(timer);};
   },[]);
 
-  const mkSynced=(setter,path)=>(updater)=>{let next;setter(prev=>{next=typeof updater==="function"?updater(prev):updater;return next;});Promise.resolve().then(()=>{if(next!==undefined)fbSet(path,next);});};
+  const mkSynced=(setter,path)=>(updater)=>{
+    setter(prev=>{
+      const next=typeof updater==="function"?updater(prev):updater;
+      if(next!==undefined){try{dbRef.current?.ref(path).set(next);}catch(e){console.warn("Firebase write error",e);}}
+      return next;
+    });
+  };
   const syncedSetTournament=mkSynced(setTournament,"tournament");
   const syncedSetUsers=mkSynced(setUsers,"users");
   const syncedSetScores=mkSynced(setScores,"scores");
