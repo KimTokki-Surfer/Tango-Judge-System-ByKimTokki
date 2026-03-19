@@ -326,7 +326,7 @@ function getEligibleForStage(cat,stageKey,tournament,directorLocks) {
 }
 // [기능8] JJ 균형 배분 유지
 function distributeJJ(eligible,stageRounds,mode) {
-  const leaders=eligible.filter(p=>p.gender==="male"),followers=eligible.filter(p=>p.gender==="female"),nRounds=stageRounds.length;
+  const leaders=eligible.filter(p=>p.gender==="male"||p.gender==="couple"),followers=eligible.filter(p=>p.gender==="female"),nRounds=stageRounds.length;
   if(nRounds===0) return{distributed:[],warning:null};
   const shuffle=(arr)=>{const a=[...arr];for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;};
   const sorted=(arr)=>[...arr].sort((a,b)=>parseInt(a.number)-parseInt(b.number));
@@ -649,9 +649,9 @@ function SetupPanel({tournament,setTournament,users,setUsers,directorLocks,setDi
                             </div>
                             {(r.coupleIds||[]).length>0&&(
                               <div style={{marginTop:"7px"}}>
-                                {cat.type==="jacknjill"&&(()=>{const ids=toArr(r.coupleIds),ps=ids.map(id=>(tournament.participants||[]).find(p=>p.id===id)).filter(Boolean),nL=ps.filter(p=>p.gender==="male").length,nF=ps.filter(p=>p.gender==="female").length,diff=Math.abs(nL-nF);if(diff===0)return<div style={{fontSize:"11px",color:"var(--green)",marginBottom:"5px"}}>✓ 리더 {nL}명 · 팔로워 {nF}명 (균형)</div>;const sh=nL<nF?"리더":"팔로워";return<div style={{fontSize:"11px",color:"var(--warn)",background:"rgba(230,126,34,.08)",border:"1px solid rgba(230,126,34,.3)",borderRadius:"5px",padding:"3px 8px",marginBottom:"5px"}}>⚠ 리더 {nL}명 · 팔로워 {nF}명 — {sh} 도우미 {diff}명 필요</div>;})()}
+                                {cat.type==="jacknjill"&&(()=>{const ids=toArr(r.coupleIds),ps=ids.map(id=>(tournament.participants||[]).find(p=>p.id===id)).filter(Boolean),nL=ps.filter(p=>p.gender==="male"||p.gender==="couple").length,nF=ps.filter(p=>p.gender==="female").length,diff=Math.abs(nL-nF);if(diff===0)return<div style={{fontSize:"11px",color:"var(--green)",marginBottom:"5px"}}>✓ 리더 {nL}명 · 팔로워 {nF}명 (균형)</div>;const sh=nL<nF?"리더":"팔로워";return<div style={{fontSize:"11px",color:"var(--warn)",background:"rgba(230,126,34,.08)",border:"1px solid rgba(230,126,34,.3)",borderRadius:"5px",padding:"3px 8px",marginBottom:"5px"}}>⚠ 리더 {nL}명 · 팔로워 {nF}명 — {sh} 도우미 {diff}명 필요</div>;})()}
                                 <div style={{display:"flex",flexWrap:"wrap",gap:"4px"}}>
-                                  {(r.coupleIds||[]).map(pid=>{const p=(tournament.participants||[]).find(x=>x.id===pid);if(!p)return null;const isL=p.gender==="male",isF=p.gender==="female";return<span key={pid} style={{display:"inline-flex",alignItems:"center",gap:"3px",background:cat.type==="jacknjill"?(isL?"rgba(52,152,219,.12)":isF?"rgba(231,76,60,.1)":"rgba(201,168,76,.1)"):"rgba(201,168,76,.1)",border:"1px solid "+(cat.type==="jacknjill"?(isL?"rgba(52,152,219,.35)":isF?"rgba(231,76,60,.3)":"rgba(201,168,76,.25)"):"rgba(201,168,76,.25)"),borderRadius:"4px",padding:"2px 6px",fontSize:"11px"}}><span style={{color:cat.type==="jacknjill"?(isL?"var(--blue)":isF?"var(--red2)":"var(--gold)"):"var(--gold)",fontWeight:700}}>{p.number}</span>{cat.type==="jacknjill"&&<span style={{fontSize:"9px",color:"var(--muted)"}}>{isL?"L":isF?"F":""}</span>}{p.nickname&&<span style={{color:"var(--muted)"}}>{p.nickname}</span>}</span>;})}
+                                  {(r.coupleIds||[]).map(pid=>{const p=(tournament.participants||[]).find(x=>x.id===pid);if(!p)return null;const isL=p.gender==="male"||p.gender==="couple",isF=p.gender==="female";const tagName=cat.type==="jacknjill"?(p.leaderName||p.nickname||""):(p.leaderName&&p.followerName?p.leaderName+" y "+p.followerName:p.leaderName||p.nickname||"");return<span key={pid} style={{display:"inline-flex",alignItems:"center",gap:"3px",background:cat.type==="jacknjill"?(isL?"rgba(52,152,219,.12)":isF?"rgba(231,76,60,.1)":"rgba(201,168,76,.1)"):"rgba(201,168,76,.1)",border:"1px solid "+(cat.type==="jacknjill"?(isL?"rgba(52,152,219,.35)":isF?"rgba(231,76,60,.3)":"rgba(201,168,76,.25)"):"rgba(201,168,76,.25)"),borderRadius:"4px",padding:"2px 6px",fontSize:"11px"}}><span style={{color:cat.type==="jacknjill"?(isL?"var(--blue)":isF?"var(--red2)":"var(--gold)"):"var(--gold)",fontWeight:700}}>{p.number}</span>{cat.type==="jacknjill"&&<span style={{fontSize:"9px",color:"var(--muted)"}}>{isL?"L":isF?"F":""}</span>}{tagName&&<span style={{color:"var(--muted)",fontSize:"10px"}}> {tagName}</span>}</span>;})}
                                 </div>
                               </div>
                             )}
@@ -746,11 +746,11 @@ function ParticipantMgmtPanel({tournament,setTournament,t}) {
                         <div style={{display:"flex",flexDirection:"column",gap:"4px"}}>
                           {editGender==="couple"
                             ?<div style={{display:"flex",gap:"5px",alignItems:"center"}}>
-                                <input value={editLeader} onChange={e=>setEditLeader(e.target.value)} placeholder={t("leaderNamePH")} style={{flex:1,minWidth:"100px",fontSize:"12px"}} />
+                                <input value={editLeader} onChange={e=>setEditLeader(e.target.value)} onKeyDown={e=>e.key==="Enter"&&saveEdit()} placeholder={t("leaderNamePH")} style={{flex:1,minWidth:"100px",fontSize:"12px"}} />
                                 <span style={{color:"var(--muted)",fontSize:"12px",flexShrink:0}}>y</span>
-                                <input value={editFollower} onChange={e=>setEditFollower(e.target.value)} placeholder={t("followerNamePH")} style={{flex:1,minWidth:"100px",fontSize:"12px"}} />
+                                <input value={editFollower} onChange={e=>setEditFollower(e.target.value)} onKeyDown={e=>e.key==="Enter"&&saveEdit()} placeholder={t("followerNamePH")} style={{flex:1,minWidth:"100px",fontSize:"12px"}} />
                               </div>
-                            :<input value={editNick} onChange={e=>setEditNick(e.target.value)} placeholder="닉네임" style={{width:"160px"}} />
+                            :<input value={editNick} onChange={e=>setEditNick(e.target.value)} onKeyDown={e=>e.key==="Enter"&&saveEdit()} placeholder="닉네임" style={{width:"160px"}} />
                           }
                         </div>
                       ):(
@@ -950,13 +950,13 @@ function JudgeScoringPanel({tournament,scores,setScores,currentUser,users,judgeL
                   const myScore=calcEntryScore(entry,cat.scoringType,criteria,calcMode);
                   const avgScore=calcCoupleAvg(scores,roundKey,p.id,judgeUsers,cat.scoringType,criteria,avgMode,calcMode);
                   const outlier=tournament.outlierEnabled!==false&&tournament.showAvgToJudge!==false&&isOutlierScore(myScore,judgeId,scores,roundKey,p.id,judgeUsers,cat.scoringType,criteria,tournament.outlierThreshold);
-                  const filterHidden=isJJ&&genderFilter!=="all"&&p.gender!==genderFilter;
+                  const isLeaderRole=p.gender==="male"||p.gender==="couple";const filterHidden=isJJ&&genderFilter!=="all"&&!(genderFilter==="male"?isLeaderRole:p.gender==="female");
                   const disabled=isDirectorLocked||isJudgeLocked;
                   return(
                     <tr key={p.id} style={{display:filterHidden?"none":""}}>
                       <td style={{fontWeight:700,color:"var(--gold)",fontSize:"15px"}}>{p.number}</td>
                       <td><div style={{fontWeight:500}}>{getDisplayName(p,isJJ)}</div>{outlier&&<div className="warn-box">⚠ 평균 이탈</div>}</td>
-                      {isJJ&&<td><span className={`tag ${p.gender==="male"?"tag-muted":"tag-red"}`}>{p.gender==="male"?t("maleShort"):t("femaleShort")}</span></td>}
+                      {isJJ&&<td><span className={`tag ${(p.gender==="male"||p.gender==="couple")?"tag-muted":"tag-red"}`}>{(p.gender==="male"||p.gender==="couple")?t("maleShort"):t("femaleShort")}</span></td>}
                       <td><MemoCell value={entry.memo||""} onChange={v=>setMemo(p.id,v)} disabled={disabled} placeholder={t("memoPlaceholder")} lang={memoLang} imeActive={imeLock&&isImeLang} /></td>
                       {criteria.length>0?criteria.map(k=><td key={k}><ScoreCell value={entry.criteria?.[k]??null} onChange={v=>setCrit(p.id,k,v)} disabled={disabled} /></td>):<td><ScoreCell value={entry.simple??null} onChange={v=>setSimple(p.id,v)} disabled={disabled} /></td>}
                       {tournament.showAvgToJudge!==false&&(
@@ -1000,7 +1000,7 @@ function DirectorPanel({tournament,scores,setTournament,users,judgeLocks,setJudg
   const getJScore=(jid,cid)=>calcEntryScore(scores?.[selRound]?.[jid]?.[cid],cat?.scoringType,cat?.criteria,calcMode);
   const ranked=useMemo(()=>[...couples].sort((a,b)=>{const av=getAvg(a.id),bv=getAvg(b.id);if(av==null&&bv==null)return 0;if(av==null)return 1;if(bv==null)return-1;return bv-av;}),[couples,scores,selRound,judgeUsers,cat]);
   // [기능7] JJ 분리 순위
-  const rankedLeaders=isJJCat?ranked.filter(p=>p.gender==="male"):[];
+  const rankedLeaders=isJJCat?ranked.filter(p=>p.gender==="male"||p.gender==="couple"):[];
   const rankedFollowers=isJJCat?ranked.filter(p=>p.gender==="female"):[];
   const curStageKey=round?.stageKey;
   const curStage=curStageKey?(cat?.stages||[]).find(s=>s.stageKey===curStageKey):null;
