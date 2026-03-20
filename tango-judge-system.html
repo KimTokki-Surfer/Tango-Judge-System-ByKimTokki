@@ -27,7 +27,7 @@
 <div id="root"></div>
 <script type="text/babel">
 const { useState, useMemo } = React;
-const APP_VERSION = "v2.2.1";
+const APP_VERSION = "v2.2.2";
 const STYLE = `
   @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&display=swap');
   :root {
@@ -777,7 +777,7 @@ function ParticipantMgmtPanel({tournament,setTournament,t}) {
                       ):(
                         <span style={{fontWeight:500}}>{getDisplayName(p,false)||<span style={{color:"var(--muted)",fontSize:"12px",fontStyle:"italic"}}>이름 없음</span>}</span>
                       )}</td>
-                      <td>{isEditing?<select value={editGender} onChange={e=>{setEditGender(e.target.value);if(e.target.value!=="couple"){setEditLeader("");setEditFollower("");}}} style={{padding:"4px 6px",fontSize:"12px",width:"auto"}}>{[["couple",t("couple")],["male",t("maleShort")],["female",t("femaleShort")]].map(([v,lbl])=><option key={v} value={v}>{lbl}</option>)}</select>:<span className={`tag ${p.gender==="male"?"tag-muted":p.gender==="female"?"tag-red":"tag-gold"}`} style={{fontSize:"10px"}}>{p.gender==="male"?t("maleShort"):p.gender==="female"?t("femaleShort"):t("couple")}</span>}</td>
+                      <td>{isEditing?<select value={editGender} onChange={e=>{setEditGender(e.target.value);if(e.target.value!=="couple"){setEditLeader("");setEditFollower("");}}} style={{padding:"4px 6px",fontSize:"12px",width:"auto"}}>{[["couple",t("couple")],["male",t("maleShort")],["female",t("femaleShort")]].map(([v,lbl])=><option key={v} value={v}>{lbl}</option>)}</select>:<span className={`tag ${p.gender==="male"?"tag-blue":p.gender==="female"?"tag-red":"tag-gold"}`} style={{fontSize:"10px"}}>{p.gender==="male"?t("maleShort"):p.gender==="female"?t("femaleShort"):t("couple")}</span>}</td>
                       <td><div style={{display:"flex",gap:"4px",flexWrap:"wrap"}}>{assignedCats.length===0?<span style={{fontSize:"11px",color:"var(--muted)"}}>미배정</span>:assignedCats.map(c=><span key={c.id} className="tag tag-gold" style={{fontSize:"10px"}}>{c.name}</span>)}</div></td>
                       <td>{isEditing?<div style={{display:"flex",gap:"4px"}}><button className="btn btn-gold btn-sm" onClick={saveEdit}>저장</button><button className="btn btn-ghost btn-sm" onClick={()=>setEditingId(null)}>취소</button></div>:<div style={{display:"flex",gap:"4px"}}><button className="btn btn-ghost btn-sm" onClick={e=>{e.stopPropagation();setEditingId(p.id);setEditNo(p.number);setEditNick(p.nickname||"");setEditGender(p.gender||"couple");setEditLeader(p.leaderName||"");setEditFollower(p.followerName||"");}}>✏</button><button className="btn btn-ghost btn-sm" style={{color:"var(--red2)"}} onClick={e=>{e.stopPropagation();deletePs([p.id]);}}>×</button></div>}</td>
                     </tr>
@@ -975,7 +975,7 @@ function JudgeScoringPanel({tournament,scores,setScores,currentUser,users,judgeL
                     <tr key={p.id} style={{display:filterHidden?"none":""}}>
                       <td style={{fontWeight:700,color:"var(--gold)",fontSize:"15px"}}>{p.number}</td>
                       <td><div style={{fontWeight:500}}>{getDisplayName(p,isJJ)}</div>{outlier&&<div className="warn-box">⚠ 평균 이탈</div>}</td>
-                      {isJJ&&<td><span className={`tag ${(p.gender==="male"||p.gender==="couple")?"tag-muted":"tag-red"}`}>{(p.gender==="male"||p.gender==="couple")?t("maleShort"):t("femaleShort")}</span></td>}
+                      {isJJ&&<td><span className={`tag ${(p.gender==="male"||p.gender==="couple")?"tag-blue":"tag-red"}`}>{(p.gender==="male"||p.gender==="couple")?t("maleShort"):t("femaleShort")}</span></td>}
                       <td><MemoCell value={entry.memo||""} onChange={v=>setMemo(p.id,v)} disabled={disabled} placeholder={t("memoPlaceholder")} lang={memoLang} imeActive={imeLock&&isImeLang} /></td>
                       {criteria.length>0?criteria.map(k=><td key={k}><ScoreCell value={entry.criteria?.[k]??null} onChange={v=>setCrit(p.id,k,v)} disabled={disabled} /></td>):<td><ScoreCell value={entry.simple??null} onChange={v=>setSimple(p.id,v)} disabled={disabled} /></td>}
                       {tournament.showAvgToJudge!==false&&(
@@ -1516,35 +1516,11 @@ function App() {
   },[]);
 
   // ── useEffect: state → Firebase 단방향 동기화 ──
-  // React가 state를 완전히 커밋한 후에 Firebase write
-  // fromFB가 true이면 Firebase에서 온 변경이므로 write skip (echo loop 방지)
-  React.useEffect(()=>{
-    if(fromFB.current||!dbRef.current||!fbReady) return;
-    dbRef.current.ref("tournament").set(sanitize(tournament))
-      .catch(e=>console.error("❌ Firebase tournament write failed:",e));
-  },[tournament]);
-  React.useEffect(()=>{
-    if(fromFB.current||!dbRef.current||!fbReady) return;
-    dbRef.current.ref("users").set(sanitize(users))
-      .catch(e=>console.error("❌ Firebase users write failed:",e));
-  },[users]);
-  React.useEffect(()=>{
-    if(fromFB.current||!dbRef.current||!fbReady) return;
-    dbRef.current.ref("scores").set(sanitize(scores))
-      .catch(e=>console.error("❌ Firebase scores write failed:",e));
-  },[scores]);
-  React.useEffect(()=>{
-    if(fromFB.current||!dbRef.current||!fbReady) return;
-    dbRef.current.ref("judgeLocks").set(sanitize(judgeLocks))
-      .catch(e=>console.error("❌ Firebase judgeLocks write failed:",e));
-  },[judgeLocks]);
-  React.useEffect(()=>{
-    if(fromFB.current||!dbRef.current||!fbReady) return;
-    dbRef.current.ref("directorLocks").set(sanitize(directorLocks))
-      .catch(e=>console.error("❌ Firebase directorLocks write failed:",e));
-  },[directorLocks]);
-
-  // synced setters: 그냥 rawSetter (Firebase 동기화는 useEffect가 담당)
+  React.useEffect(()=>{ if(fromFB.current||!dbRef.current||!fbReady) return; dbRef.current.ref("tournament").set(sanitize(tournament)).catch(e=>console.error("❌ FB tournament:",e)); },[tournament]);
+  React.useEffect(()=>{ if(fromFB.current||!dbRef.current||!fbReady) return; dbRef.current.ref("users").set(sanitize(users)).catch(e=>console.error("❌ FB users:",e)); },[users]);
+  React.useEffect(()=>{ if(fromFB.current||!dbRef.current||!fbReady) return; dbRef.current.ref("scores").set(sanitize(scores)).catch(e=>console.error("❌ FB scores:",e)); },[scores]);
+  React.useEffect(()=>{ if(fromFB.current||!dbRef.current||!fbReady) return; dbRef.current.ref("judgeLocks").set(sanitize(judgeLocks)).catch(e=>console.error("❌ FB judgeLocks:",e)); },[judgeLocks]);
+  React.useEffect(()=>{ if(fromFB.current||!dbRef.current||!fbReady) return; dbRef.current.ref("directorLocks").set(sanitize(directorLocks)).catch(e=>console.error("❌ FB directorLocks:",e)); },[directorLocks]);
   const syncedSetTournament=setTournament;
   const syncedSetUsers=setUsers;
   const syncedSetScores=setScores;
