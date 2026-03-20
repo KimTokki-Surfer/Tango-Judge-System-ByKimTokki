@@ -1484,60 +1484,71 @@ function App() {
   const [view,setView]=useState("scoring");
   const [editingName,setEditingName]=useState(false),[editNameVal,setEditNameVal]=useState("");
   const dbRef=React.useRef(null);
-  // 각 state의 최신값을 ref로 동기적으로 추적
-  // → React 18 자동 배칭(deferred updater) 완전 우회하여 Firebase write 보장
-  const _tmt=React.useRef(INIT_TOURNAMENT);
-  const _usr=React.useRef(INIT_USERS);
-  const _sc=React.useRef({});
-  const _jl=React.useRef({});
-  const _dl=React.useRef({});
-
-  const fbWrite=(path,value)=>{
-    if(!dbRef.current||value===undefined||value===null) return;
-    try{dbRef.current.ref(path).set(value);}
-    catch(e){console.error("Firebase write failed:",path,e);}
-  };
+  // fromFB: Firebase에서 받아서 state를 업데이트하는 중임을 표시
+  // → useEffect에서 Firebase write를 skip (echo loop 방지)
+  const fromFB=React.useRef(false);
   const fbUpdate=React.useRef((updates)=>{if(!dbRef.current)return;dbRef.current.ref("/").update(updates);}).current;
 
   React.useEffect(()=>{
     const db=window.__firebaseDB;if(!db){setFbReady(true);return;}dbRef.current=db;
     let readyCount=0;const TOTAL=6;const markReady=()=>{readyCount++;if(readyCount>=TOTAL)setFbReady(true);};
-    // safeset: Firebase → React state (ref도 동시 갱신)
-    const safeset=(setter,ref,defaultVal)=>(snap)=>{
+    const safeset=(setter,defaultVal)=>(snap)=>{
       const raw=snap.val();
       const v=raw!=null?fixArrays(raw):defaultVal;
-      if(ref) ref.current=v;
+      fromFB.current=true;
       setter(v);
+      // 다음 microtask에서 fromFB 해제 (React 배칭이 끝난 후)
+      Promise.resolve().then(()=>{fromFB.current=false;});
       markReady();
     };
-    const refs=[];const sub=(path,setter,ref,def)=>{const r=db.ref(path);refs.push(r);r.on("value",safeset(setter,ref,def));};
-    sub("tournament",setTournament,_tmt,INIT_TOURNAMENT);
-    sub("users",setUsers,_usr,INIT_USERS);
-    sub("scores",setScores,_sc,{});
-    sub("judgeLocks",setJudgeLocks,_jl,{});
-    sub("directorLocks",setDirectorLocks,_dl,{});
-    sub("broadcast",setBroadcast,null,null);
+    const refs=[];const sub=(path,setter,def)=>{const r=db.ref(path);refs.push(r);r.on("value",safeset(setter,def));};
+    sub("tournament",setTournament,INIT_TOURNAMENT);
+    sub("users",setUsers,INIT_USERS);
+    sub("scores",setScores,{});
+    sub("judgeLocks",setJudgeLocks,{});
+    sub("directorLocks",setDirectorLocks,{});
+    sub("broadcast",setBroadcast,null);
     db.ref("tournament").once("value").then(snap=>{if(!snap.exists()){db.ref("tournament").set(INIT_TOURNAMENT);db.ref("users").set(INIT_USERS);}});
     const timer=setTimeout(()=>setFbReady(true),5000);
     return()=>{refs.forEach(r=>r.off("value"));clearTimeout(timer);};
   },[]);
 
-  // mkSynced: ref 기반으로 즉시(동기) 계산 + 즉시 Firebase write
-  // React 18 배칭 deferred updater 문제 완전 해결
-  const mkSynced=(setter,ref,path)=>(updater)=>{
-    const prev=ref.current;
-    const next=typeof updater==="function"?updater(prev):updater;
-    if(next===undefined) return;
-    ref.current=next;      // ref 즉시 갱신
-    setter(next);          // React state 갱신 (UI 업데이트)
-    fbWrite(path,next);    // Firebase 즉시 write
-  };
-  const syncedSetTournament=mkSynced(setTournament,_tmt,"tournament");
-  const syncedSetUsers=mkSynced(setUsers,_usr,"users");
-  const syncedSetScores=mkSynced(setScores,_sc,"scores");
-  const syncedSetJudgeLocks=mkSynced(setJudgeLocks,_jl,"judgeLocks");
-  const syncedSetDirectorLocks=mkSynced(setDirectorLocks,_dl,"directorLocks");
-  const syncedSetBroadcast=(val)=>{setBroadcast(val);fbWrite("broadcast",val);};
+  // ── useEffect: state → Firebase 단방향 동기화 ──
+  // React가 state를 완전히 커밋한 후에 Firebase write
+  // fromFB가 true이면 Firebase에서 온 변경이므로 write skip (echo loop 방지)
+  React.useEffect(()=>{
+    if(fromFB.current||!dbRef.current||!fbReady) return;
+    dbRef.current.ref("tournament").set(tournament)
+      .catch(e=>console.error("❌ Firebase tournament write failed:",e));
+  },[tournament]);
+  React.useEffect(()=>{
+    if(fromFB.current||!dbRef.current||!fbReady) return;
+    dbRef.current.ref("users").set(users)
+      .catch(e=>console.error("❌ Firebase users write failed:",e));
+  },[users]);
+  React.useEffect(()=>{
+    if(fromFB.current||!dbRef.current||!fbReady) return;
+    dbRef.current.ref("scores").set(scores)
+      .catch(e=>console.error("❌ Firebase scores write failed:",e));
+  },[scores]);
+  React.useEffect(()=>{
+    if(fromFB.current||!dbRef.current||!fbReady) return;
+    dbRef.current.ref("judgeLocks").set(judgeLocks)
+      .catch(e=>console.error("❌ Firebase judgeLocks write failed:",e));
+  },[judgeLocks]);
+  React.useEffect(()=>{
+    if(fromFB.current||!dbRef.current||!fbReady) return;
+    dbRef.current.ref("directorLocks").set(directorLocks)
+      .catch(e=>console.error("❌ Firebase directorLocks write failed:",e));
+  },[directorLocks]);
+
+  // synced setters: 그냥 rawSetter (Firebase 동기화는 useEffect가 담당)
+  const syncedSetTournament=setTournament;
+  const syncedSetUsers=setUsers;
+  const syncedSetScores=setScores;
+  const syncedSetJudgeLocks=setJudgeLocks;
+  const syncedSetDirectorLocks=setDirectorLocks;
+  const syncedSetBroadcast=(val)=>{setBroadcast(val);if(dbRef.current)dbRef.current.ref("broadcast").set(val);};
 
   const handleLogin=(u)=>setPendingUser(u);
   const handleNameConfirm=(u)=>{syncedSetUsers(prev=>(prev||[]).map(x=>x.id===u.id?{...x,name:u.name}:x));setCurrentUser(u);setPendingUser(null);if(u.role==="admin")setView("setup");else if(u.role==="director")setView("director");else setView("scoring");};
