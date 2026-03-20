@@ -27,7 +27,7 @@
 <div id="root"></div>
 <script type="text/babel">
 const { useState, useMemo } = React;
-const APP_VERSION = "v2.2.0";
+const APP_VERSION = "v2.2.1";
 const STYLE = `
   @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&display=swap');
   :root {
@@ -1487,7 +1487,9 @@ function App() {
   // fromFB: Firebase에서 받아서 state를 업데이트하는 중임을 표시
   // → useEffect에서 Firebase write를 skip (echo loop 방지)
   const fromFB=React.useRef(false);
-  const fbUpdate=React.useRef((updates)=>{if(!dbRef.current)return;dbRef.current.ref("/").update(updates);}).current;
+  // Firebase는 undefined 값 허용 안 함 → JSON 왕복으로 제거
+  const sanitize=(v)=>JSON.parse(JSON.stringify(v===undefined?null:v));
+  const fbUpdate=React.useRef((updates)=>{if(!dbRef.current)return;dbRef.current.ref("/").update(sanitize(updates));}).current;
 
   React.useEffect(()=>{
     const db=window.__firebaseDB;if(!db){setFbReady(true);return;}dbRef.current=db;
@@ -1518,27 +1520,27 @@ function App() {
   // fromFB가 true이면 Firebase에서 온 변경이므로 write skip (echo loop 방지)
   React.useEffect(()=>{
     if(fromFB.current||!dbRef.current||!fbReady) return;
-    dbRef.current.ref("tournament").set(tournament)
+    dbRef.current.ref("tournament").set(sanitize(tournament))
       .catch(e=>console.error("❌ Firebase tournament write failed:",e));
   },[tournament]);
   React.useEffect(()=>{
     if(fromFB.current||!dbRef.current||!fbReady) return;
-    dbRef.current.ref("users").set(users)
+    dbRef.current.ref("users").set(sanitize(users))
       .catch(e=>console.error("❌ Firebase users write failed:",e));
   },[users]);
   React.useEffect(()=>{
     if(fromFB.current||!dbRef.current||!fbReady) return;
-    dbRef.current.ref("scores").set(scores)
+    dbRef.current.ref("scores").set(sanitize(scores))
       .catch(e=>console.error("❌ Firebase scores write failed:",e));
   },[scores]);
   React.useEffect(()=>{
     if(fromFB.current||!dbRef.current||!fbReady) return;
-    dbRef.current.ref("judgeLocks").set(judgeLocks)
+    dbRef.current.ref("judgeLocks").set(sanitize(judgeLocks))
       .catch(e=>console.error("❌ Firebase judgeLocks write failed:",e));
   },[judgeLocks]);
   React.useEffect(()=>{
     if(fromFB.current||!dbRef.current||!fbReady) return;
-    dbRef.current.ref("directorLocks").set(directorLocks)
+    dbRef.current.ref("directorLocks").set(sanitize(directorLocks))
       .catch(e=>console.error("❌ Firebase directorLocks write failed:",e));
   },[directorLocks]);
 
@@ -1548,7 +1550,7 @@ function App() {
   const syncedSetScores=setScores;
   const syncedSetJudgeLocks=setJudgeLocks;
   const syncedSetDirectorLocks=setDirectorLocks;
-  const syncedSetBroadcast=(val)=>{setBroadcast(val);if(dbRef.current)dbRef.current.ref("broadcast").set(val);};
+  const syncedSetBroadcast=(val)=>{setBroadcast(val);if(dbRef.current)dbRef.current.ref("broadcast").set(sanitize(val));};
 
   const handleLogin=(u)=>setPendingUser(u);
   const handleNameConfirm=(u)=>{syncedSetUsers(prev=>(prev||[]).map(x=>x.id===u.id?{...x,name:u.name}:x));setCurrentUser(u);setPendingUser(null);if(u.role==="admin")setView("setup");else if(u.role==="director")setView("director");else setView("scoring");};
