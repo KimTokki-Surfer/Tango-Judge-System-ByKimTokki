@@ -465,7 +465,7 @@ function SetupPanel({tournament,setTournament,users,setUsers,directorLocks,setDi
   const moveCat=(id,dir)=>{const cats=[...(tournament.categories||[])];const idx=cats.findIndex(c=>c.id===id);const to=idx+dir;if(to<0||to>=cats.length)return;[cats[idx],cats[to]]=[cats[to],cats[idx]];setTournament(prev=>({...prev,categories:cats}));};
   const addCat=()=>{if(!newCatName.trim())return;const newC=mkCat(newCatName.trim(),newCatType,newCatScoring,newCatStages,[]);setTournament(prev=>({...prev,categories:[...(prev.categories||[]),newC]}));setSelCat(newC.id);setNewCatName("");setShowAddCat(false);};
   const delCat=(cid)=>{if(!window.confirm("이 종목을 삭제하시겠습니까?"))return;const r=(tournament.categories||[]).filter(c=>c.id!==cid);setTournament(prev=>({...prev,categories:r}));setSelCat((r[0]||{}).id||"");};
-  const resetCatData=(catId)=>{if(!window.confirm("이 종목의 모든 채점/확정 데이터를 초기화하시겠습니까?"))return;const c=(tournament.categories||[]).find(x=>x.id===catId);if(!c)return;const newCats=(tournament.categories||[]).map(cat=>cat.id!==catId?cat:{...cat,rounds:(cat.rounds||[]).map(r=>({...r,finalized:false,advancedIds:[],coupleIds:[]})),stages:(cat.stages||[]).map(s=>({...s,finalized:false,advancedIds:[]}))});const newTmt={...tournament,categories:newCats};const newDl={...directorLocks};(c.rounds||[]).forEach(r=>{delete newDl[r.id];});fbUpdate({tournament:newTmt,directorLocks:newDl,scores:{},judgeLocks:{}});setTournament(newTmt);setDirectorLocks(newDl);setScores({});setJudgeLocks({});};
+  const resetCatData=(catId)=>{if(!window.confirm("이 종목의 모든 채점/확정 데이터를 초기화하시겠습니까?"))return;const c=(tournament.categories||[]).find(x=>x.id===catId);if(!c)return;const newCats=(tournament.categories||[]).map(cat=>cat.id!==catId?cat:{...cat,rounds:(cat.rounds||[]).map(r=>({...r,finalized:false,advancedIds:[],coupleIds:[]})),stages:(cat.stages||[]).map(s=>({...s,finalized:false,advancedIds:[]}))});const newTmt={...tournament,categories:newCats};const newDl={...directorLocks};(c.rounds||[]).forEach(r=>{delete newDl[r.id];});setTournament(newTmt);setDirectorLocks(newDl);setScores({});setJudgeLocks({});};
   const addRoundToStage=(catId,stageKey,stageLabel)=>{const c=(tournament.categories||[]).find(x=>x.id===catId);if(!c)return;const sr=(c.rounds||[]).filter(r=>r.stageKey===stageKey);const title=newRTitle.trim()||`${stageLabel} ${sr.length+1}론다`;const newR={id:uid(),stageKey,stageName:stageLabel,title,coupleIds:[],targetSize:null,finalized:false,advancedIds:[]};updCat(catId,{rounds:[...(c.rounds||[]),newR]});setNewRTitle("");};
   const delRound=(catId,rid)=>{if(!window.confirm("이 론다를 삭제하시겠습니까?"))return;const c=(tournament.categories||[]).find(x=>x.id===catId);updCat(catId,{rounds:(c.rounds||[]).filter(r=>r.id!==rid)});const dl={...directorLocks};delete dl[rid];setDirectorLocks(dl);};
   const toggleCouple=(catId,roundId,coupleId)=>{const c=(tournament.categories||[]).find(x=>x.id===catId);const r=(c.rounds||[]).find(x=>x.id===roundId);const has=(r.coupleIds||[]).includes(coupleId);const newIds=has?(r.coupleIds||[]).filter(id=>id!==coupleId):[...(r.coupleIds||[]),coupleId];updCat(catId,{rounds:(c.rounds||[]).map(x=>x.id===roundId?{...x,coupleIds:newIds}:x)});};
@@ -1011,7 +1011,7 @@ function DirectorPanel({tournament,scores,setTournament,users,judgeLocks,setJudg
     if(!showStageAdv||!cat) return[];
     try{const ids=new Set((cat.rounds||[]).filter(r=>r.stageKey===showStageAdv&&isRFin(r)).flatMap(r=>toArr(r.advancedIds)).filter(Boolean));const ps=[...ids].map(id=>(tournament.participants||[]).find(p=>p.id===id)).filter(Boolean);return ps.sort((a,b)=>{try{const rsA=(cat.rounds||[]).filter(r=>r.stageKey===showStageAdv&&isRFin(r)&&toArr(r.coupleIds).includes(a.id));const rsB=(cat.rounds||[]).filter(r=>r.stageKey===showStageAdv&&isRFin(r)&&toArr(r.coupleIds).includes(b.id));const avA=rsA.length?rsA.map(r=>calcCoupleAvg(scores,r.id,a.id,judgeUsers,cat.scoringType,cat.criteria,avgMode,calcMode)||0).reduce((x,y)=>x+y,0)/rsA.length:0;const avB=rsB.length?rsB.map(r=>calcCoupleAvg(scores,r.id,b.id,judgeUsers,cat.scoringType,cat.criteria,avgMode,calcMode)||0).reduce((x,y)=>x+y,0)/rsB.length:0;return avB-avA;}catch(e){return 0;}});}catch(e){console.error(e);return[];}
   },[showStageAdv,cat,tournament.participants,scores,directorLocks]);
-  const lockRound=()=>{if(!selectedAdv.length)return;const newTmt={...tournament,categories:(tournament.categories||[]).map(c=>c.id!==selCat?c:{...c,rounds:(c.rounds||[]).map(r=>r.id===selRound?{...r,finalized:true,advancedIds:selectedAdv}:r)})};const newDL={...directorLocks,[selRound]:true};fbUpdate({tournament:newTmt,directorLocks:newDL});setTournament(newTmt);setDirectorLocks(newDL);setShowLockConfirm(false);setSelectedAdv([]);};
+  const lockRound=()=>{if(!selectedAdv.length)return;const newTmt={...tournament,categories:(tournament.categories||[]).map(c=>c.id!==selCat?c:{...c,rounds:(c.rounds||[]).map(r=>r.id===selRound?{...r,finalized:true,advancedIds:selectedAdv}:r)})};const newDL={...directorLocks,[selRound]:true};setTournament(newTmt);setDirectorLocks(newDL);setShowLockConfirm(false);setSelectedAdv([]);};
   const unlockRound=()=>{if(currentUser?.role!=="admin")return;const dl={...directorLocks};delete dl[selRound];setDirectorLocks(dl);const jl={...judgeLocks};delete jl[selRound];setJudgeLocks(jl);setTournament(prev=>({...prev,categories:(prev.categories||[]).map(c=>c.id!==selCat?c:{...c,rounds:(c.rounds||[]).map(r=>r.id===selRound?{...r,finalized:false,advancedIds:[]}:r)})}));};
   const sendBroadcast=()=>{if(!broadcastMsg.trim()||!selRound)return;setBroadcast({roundId:selRound,message:broadcastMsg.trim(),ts:Date.now()});setBroadcastMsg("");setShowBroadcast(false);};
   const confirmStageAdv=(stageKey,distMode)=>{
@@ -1025,7 +1025,7 @@ function DirectorPanel({tournament,scores,setTournament,users,judgeLocks,setJudg
     let finalRankings=[];
     if(isFinal){const finalRs=(cat2?.rounds||[]).filter(r=>r.stageKey===stageKey&&(r.finalized||directorLocks?.[r.id]));const finalIds=[...new Set(finalRs.flatMap(r=>toArr(r.advancedIds)).filter(Boolean))];finalRankings=finalIds.map(pid=>{const p=(tournament.participants||[]).find(x=>x.id===pid);const rs=finalRs.filter(r=>toArr(r.coupleIds).includes(pid));const avgs=rs.map(r=>calcCoupleAvg(scores,r.id,pid,judgeUsers,cat2?.scoringType,cat2?.criteria,avgMode,calcMode)).filter(v=>v!=null);const avg=avgs.length?avgs.reduce((a,b)=>a+b,0)/avgs.length:null;return{pid,number:p?.number||"?",nickname:p?.nickname||"",avg};}).sort((a,b)=>b.avg!=null&&a.avg!=null?b.avg-a.avg:b.avg!=null?1:-1).map((r,i)=>({...r,rank:i+1}));}
     const newTmt={...tournament,finalResults:isFinal?{...(tournament.finalResults||{}),[selCat]:{confirmed:true,confirmedAt:Date.now(),rankings:finalRankings,catName:cat2?.name||selCat}}:(tournament.finalResults||{}),categories:(tournament.categories||[]).map(c=>c.id!==selCat?c:{...c,stages:(c.stages||[]).map(s=>s.stageKey===stageKey?{...s,finalized:true,advancedIds:advIds}:s),rounds:newRounds})};
-    fbUpdate({tournament:newTmt});setTournament(newTmt);setShowStageAdv(null);
+    setTournament(newTmt);setShowStageAdv(null);
   };
   return(
     <div style={{padding:"20px",maxWidth:"1100px",margin:"0 auto",display:"flex",flexDirection:"column",gap:"12px"}}>
@@ -1463,34 +1463,60 @@ function App() {
   const [view,setView]=useState("scoring");
   const [editingName,setEditingName]=useState(false),[editNameVal,setEditNameVal]=useState("");
   const dbRef=React.useRef(null);
-  const fbSet=React.useRef((path,value)=>{if(!dbRef.current)return;dbRef.current.ref(path).set(value);}).current;
+  // 각 state의 최신값을 ref로 동기적으로 추적
+  // → React 18 자동 배칭(deferred updater) 완전 우회하여 Firebase write 보장
+  const _tmt=React.useRef(INIT_TOURNAMENT);
+  const _usr=React.useRef(INIT_USERS);
+  const _sc=React.useRef({});
+  const _jl=React.useRef({});
+  const _dl=React.useRef({});
+
+  const fbWrite=(path,value)=>{
+    if(!dbRef.current||value===undefined||value===null) return;
+    try{dbRef.current.ref(path).set(value);}
+    catch(e){console.error("Firebase write failed:",path,e);}
+  };
   const fbUpdate=React.useRef((updates)=>{if(!dbRef.current)return;dbRef.current.ref("/").update(updates);}).current;
 
   React.useEffect(()=>{
     const db=window.__firebaseDB;if(!db){setFbReady(true);return;}dbRef.current=db;
     let readyCount=0;const TOTAL=6;const markReady=()=>{readyCount++;if(readyCount>=TOTAL)setFbReady(true);};
-    const safeset=(setter,defaultVal)=>(snap)=>{const raw=snap.val();const v=raw!=null?fixArrays(raw):defaultVal;setter(v);markReady();};
-    const refs=[];const sub=(path,setter,def)=>{const r=db.ref(path);refs.push(r);r.on("value",safeset(setter,def));};
-    sub("tournament",setTournament,INIT_TOURNAMENT);sub("users",setUsers,INIT_USERS);sub("scores",setScores,{});
-    sub("judgeLocks",setJudgeLocks,{});sub("directorLocks",setDirectorLocks,{});sub("broadcast",setBroadcast,null);
+    // safeset: Firebase → React state (ref도 동시 갱신)
+    const safeset=(setter,ref,defaultVal)=>(snap)=>{
+      const raw=snap.val();
+      const v=raw!=null?fixArrays(raw):defaultVal;
+      if(ref) ref.current=v;
+      setter(v);
+      markReady();
+    };
+    const refs=[];const sub=(path,setter,ref,def)=>{const r=db.ref(path);refs.push(r);r.on("value",safeset(setter,ref,def));};
+    sub("tournament",setTournament,_tmt,INIT_TOURNAMENT);
+    sub("users",setUsers,_usr,INIT_USERS);
+    sub("scores",setScores,_sc,{});
+    sub("judgeLocks",setJudgeLocks,_jl,{});
+    sub("directorLocks",setDirectorLocks,_dl,{});
+    sub("broadcast",setBroadcast,null,null);
     db.ref("tournament").once("value").then(snap=>{if(!snap.exists()){db.ref("tournament").set(INIT_TOURNAMENT);db.ref("users").set(INIT_USERS);}});
     const timer=setTimeout(()=>setFbReady(true),5000);
     return()=>{refs.forEach(r=>r.off("value"));clearTimeout(timer);};
   },[]);
 
-  const mkSynced=(setter,path)=>(updater)=>{
-    setter(prev=>{
-      const next=typeof updater==="function"?updater(prev):updater;
-      if(next!==undefined){try{dbRef.current?.ref(path).set(next);}catch(e){console.warn("Firebase write error",e);}}
-      return next;
-    });
+  // mkSynced: ref 기반으로 즉시(동기) 계산 + 즉시 Firebase write
+  // React 18 배칭 deferred updater 문제 완전 해결
+  const mkSynced=(setter,ref,path)=>(updater)=>{
+    const prev=ref.current;
+    const next=typeof updater==="function"?updater(prev):updater;
+    if(next===undefined) return;
+    ref.current=next;      // ref 즉시 갱신
+    setter(next);          // React state 갱신 (UI 업데이트)
+    fbWrite(path,next);    // Firebase 즉시 write
   };
-  const syncedSetTournament=mkSynced(setTournament,"tournament");
-  const syncedSetUsers=mkSynced(setUsers,"users");
-  const syncedSetScores=mkSynced(setScores,"scores");
-  const syncedSetJudgeLocks=mkSynced(setJudgeLocks,"judgeLocks");
-  const syncedSetDirectorLocks=mkSynced(setDirectorLocks,"directorLocks");
-  const syncedSetBroadcast=(val)=>{setBroadcast(val);fbSet("broadcast",val);};
+  const syncedSetTournament=mkSynced(setTournament,_tmt,"tournament");
+  const syncedSetUsers=mkSynced(setUsers,_usr,"users");
+  const syncedSetScores=mkSynced(setScores,_sc,"scores");
+  const syncedSetJudgeLocks=mkSynced(setJudgeLocks,_jl,"judgeLocks");
+  const syncedSetDirectorLocks=mkSynced(setDirectorLocks,_dl,"directorLocks");
+  const syncedSetBroadcast=(val)=>{setBroadcast(val);fbWrite("broadcast",val);};
 
   const handleLogin=(u)=>setPendingUser(u);
   const handleNameConfirm=(u)=>{syncedSetUsers(prev=>(prev||[]).map(x=>x.id===u.id?{...x,name:u.name}:x));setCurrentUser(u);setPendingUser(null);if(u.role==="admin")setView("setup");else if(u.role==="director")setView("director");else setView("scoring");};
