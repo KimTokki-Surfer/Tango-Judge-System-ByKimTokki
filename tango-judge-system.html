@@ -27,7 +27,7 @@
 <div id="root"></div>
 <script type="text/babel">
 const { useState, useMemo } = React;
-const APP_VERSION = "v2.1.0";
+const APP_VERSION = "v2.2.0";
 const STYLE = `
   @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&display=swap');
   :root {
@@ -466,9 +466,30 @@ function SetupPanel({tournament,setTournament,users,setUsers,directorLocks,setDi
   const addCat=()=>{if(!newCatName.trim())return;const newC=mkCat(newCatName.trim(),newCatType,newCatScoring,newCatStages,[]);setTournament(prev=>({...prev,categories:[...(prev.categories||[]),newC]}));setSelCat(newC.id);setNewCatName("");setShowAddCat(false);};
   const delCat=(cid)=>{if(!window.confirm("이 종목을 삭제하시겠습니까?"))return;const r=(tournament.categories||[]).filter(c=>c.id!==cid);setTournament(prev=>({...prev,categories:r}));setSelCat((r[0]||{}).id||"");};
   const resetCatData=(catId)=>{if(!window.confirm("이 종목의 모든 채점/확정 데이터를 초기화하시겠습니까?"))return;const c=(tournament.categories||[]).find(x=>x.id===catId);if(!c)return;const newCats=(tournament.categories||[]).map(cat=>cat.id!==catId?cat:{...cat,rounds:(cat.rounds||[]).map(r=>({...r,finalized:false,advancedIds:[],coupleIds:[]})),stages:(cat.stages||[]).map(s=>({...s,finalized:false,advancedIds:[]}))});const newTmt={...tournament,categories:newCats};const newDl={...directorLocks};(c.rounds||[]).forEach(r=>{delete newDl[r.id];});setTournament(newTmt);setDirectorLocks(newDl);setScores({});setJudgeLocks({});};
-  const addRoundToStage=(catId,stageKey,stageLabel)=>{const c=(tournament.categories||[]).find(x=>x.id===catId);if(!c)return;const sr=(c.rounds||[]).filter(r=>r.stageKey===stageKey);const title=newRTitle.trim()||`${stageLabel} ${sr.length+1}론다`;const newR={id:uid(),stageKey,stageName:stageLabel,title,coupleIds:[],targetSize:null,finalized:false,advancedIds:[]};updCat(catId,{rounds:[...(c.rounds||[]),newR]});setNewRTitle("");};
-  const delRound=(catId,rid)=>{if(!window.confirm("이 론다를 삭제하시겠습니까?"))return;const c=(tournament.categories||[]).find(x=>x.id===catId);updCat(catId,{rounds:(c.rounds||[]).filter(r=>r.id!==rid)});const dl={...directorLocks};delete dl[rid];setDirectorLocks(dl);};
-  const toggleCouple=(catId,roundId,coupleId)=>{const c=(tournament.categories||[]).find(x=>x.id===catId);const r=(c.rounds||[]).find(x=>x.id===roundId);const has=(r.coupleIds||[]).includes(coupleId);const newIds=has?(r.coupleIds||[]).filter(id=>id!==coupleId):[...(r.coupleIds||[]),coupleId];updCat(catId,{rounds:(c.rounds||[]).map(x=>x.id===roundId?{...x,coupleIds:newIds}:x)});};
+  const addRoundToStage=(catId,stageKey,stageLabel)=>{
+  // _tmt.current 기반으로 처리 (React prop의 stale 가능성 제거)
+  setTournament(prev=>{
+    const c=(prev.categories||[]).find(x=>x.id===catId);
+    if(!c) return prev;
+    const sr=(c.rounds||[]).filter(r=>r.stageKey===stageKey);
+    const titleVal=newRTitle.trim()||`${stageLabel} ${sr.length+1}론다`;
+    const newR={id:uid(),stageKey,stageName:stageLabel,title:titleVal,coupleIds:[],targetSize:null,finalized:false,advancedIds:[]};
+    return {...prev,categories:(prev.categories||[]).map(x=>x.id===catId?{...x,rounds:[...(x.rounds||[]),newR]}:x)};
+  });
+  setNewRTitle("");
+};
+  const delRound=(catId,rid)=>{if(!window.confirm("이 론다를 삭제하시겠습니까?"))return;setTournament(prev=>({...prev,categories:(prev.categories||[]).map(c=>c.id===catId?{...c,rounds:(c.rounds||[]).filter(r=>r.id!==rid)}:c)}));const dl={...directorLocks};delete dl[rid];setDirectorLocks(dl);};
+  const toggleCouple=(catId,roundId,coupleId)=>{
+  setTournament(prev=>{
+    const c=(prev.categories||[]).find(x=>x.id===catId);
+    if(!c) return prev;
+    const r=(c.rounds||[]).find(x=>x.id===roundId);
+    if(!r) return prev;
+    const has=(r.coupleIds||[]).includes(coupleId);
+    const newIds=has?(r.coupleIds||[]).filter(id=>id!==coupleId):[...(r.coupleIds||[]),coupleId];
+    return {...prev,categories:(prev.categories||[]).map(c2=>c2.id===catId?{...c2,rounds:(c2.rounds||[]).map(x=>x.id===roundId?{...x,coupleIds:newIds}:x)}:c2)};
+  });
+};
   const autoDistribute=(catId,stageKey,mode)=>{const c=(tournament.categories||[]).find(x=>x.id===catId);if(!c)return;const sr=(c.rounds||[]).filter(r=>r.stageKey===stageKey);if(!sr.length)return;const pool=getEligibleForStage(c,stageKey,tournament,directorLocks);if(!pool.length){alert("배치 가능한 참가자가 없습니다.");return;}if(c.type==="jacknjill"){const{distributed,warning}=distributeJJ(pool,sr,mode);updCat(catId,{rounds:(c.rounds||[]).map(r=>{const d=distributed.find(x=>x.roundId===r.id);return d?{...r,coupleIds:d.coupleIds}:r;})});if(warning)alert(warning);return;}let sorted=[...pool];if(mode==="random"){for(let i=sorted.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[sorted[i],sorted[j]]=[sorted[j],sorted[i]];}}else sorted.sort((a,b)=>parseInt(a.number)-parseInt(b.number));const n=sr.length;let idx=0;const dist=sr.map(r=>{const sz=r.targetSize||Math.ceil(sorted.length/n);const chunk=sorted.slice(idx,idx+sz).map(p=>p.id);idx+=sz;return{...r,coupleIds:chunk};});updCat(catId,{rounds:(c.rounds||[]).map(r=>{const d=dist.find(x=>x.id===r.id);return d||r;})});};
   const toggleVisibility=(rid)=>updTmt({roundVisibility:{...visibility,[rid]:!visibility[rid]}});
   const addJudge=()=>{if(!newJName.trim()||!newJPw.trim())return;const jIdx=judgeUsers.length;setUsers(prev=>[...(prev||[]),{id:uid(),name:newJName.trim(),role:"judge",password:newJPw.trim(),jIdx}]);setNewJName("");setNewJPw("");};
