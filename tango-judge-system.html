@@ -27,7 +27,7 @@
 <div id="root"></div>
 <script type="text/babel">
 const { useState, useMemo } = React;
-const APP_VERSION = "v2.2.2";
+const APP_VERSION = "v2.3.0";
 const STYLE = `
   @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&display=swap');
   :root {
@@ -189,6 +189,7 @@ const TR = {
   },
 };
 const STAGE_PRESETS = {
+  1:[{stageKey:"final",label:"결승"}],
   2:[{stageKey:"prelim",label:"예선"},{stageKey:"final",label:"결승"}],
   3:[{stageKey:"prelim",label:"예선"},{stageKey:"semi",label:"준결승"},{stageKey:"final",label:"결승"}],
   4:[{stageKey:"prelim",label:"예선"},{stageKey:"quarter",label:"준준결승"},{stageKey:"semi",label:"준결승"},{stageKey:"final",label:"결승"}],
@@ -600,7 +601,7 @@ function SetupPanel({tournament,setTournament,users,setUsers,directorLocks,setDi
               <input value={newCatName} onChange={e=>setNewCatName(e.target.value)} placeholder="종목명" style={{flex:1,minWidth:"140px"}} onKeyDown={e=>e.key==="Enter"&&addCat()} />
               <select value={newCatType} onChange={e=>setNewCatType(e.target.value)} style={{width:"110px",padding:"8px 10px"}}><option value="couple">커플</option><option value="jacknjill">잭앤질</option></select>
               <select value={newCatScoring} onChange={e=>setNewCatScoring(e.target.value)} style={{width:"120px",padding:"8px 10px"}}><option value="detailed">항목별 채점</option><option value="simple">단순 점수</option></select>
-              <select value={newCatStages} onChange={e=>setNewCatStages(Number(e.target.value))} style={{width:"130px",padding:"8px 10px"}}><option value={2}>2단계</option><option value={3}>3단계</option><option value={4}>4단계</option></select>
+              <select value={newCatStages} onChange={e=>setNewCatStages(Number(e.target.value))} style={{width:"130px",padding:"8px 10px"}}><option value={1}>단판 결승</option><option value={2}>2단계</option><option value={3}>3단계</option><option value={4}>4단계</option></select>
               <button className="btn btn-green btn-sm" onClick={addCat} disabled={!newCatName.trim()}>추가</button>
             </div>
           </div>
@@ -633,7 +634,7 @@ function SetupPanel({tournament,setTournament,users,setUsers,directorLocks,setDi
                 {cat.scoringType==="detailed"&&(<div><label style={{fontSize:"12px",color:"var(--muted)",display:"block",marginBottom:"6px"}}>항목별 점수 계산</label><div style={{display:"flex",gap:"8px",flexWrap:"wrap"}}>{[["average","평균점수 (항목 합산÷항목수)"],["sum","합산점수 (항목 합계)"]].map(([v,lbl])=><label key={v} style={{display:"flex",alignItems:"center",gap:"7px",cursor:"pointer",padding:"6px 12px",borderRadius:"8px",background:(cat.scoringCalcMode||"average")===v?"rgba(52,152,219,.12)":"var(--bg3)",border:"1px solid "+((cat.scoringCalcMode||"average")===v?"var(--blue)":"var(--border)")}}><input type="radio" checked={(cat.scoringCalcMode||"average")===v} onChange={()=>updCat(cat.id,{scoringCalcMode:v})} /><span style={{fontSize:"12px"}}>{lbl}</span></label>)}</div></div>)}
                 <div><label style={{fontSize:"12px",color:"var(--muted)",display:"block",marginBottom:"6px"}}>심판간 평균 계산</label><div style={{display:"flex",gap:"8px",flexWrap:"wrap"}}>{[["normal","일반 평균"],["trimmed","절사 평균 (최고·최저 제외)"]].map(([v,lbl])=><label key={v} style={{display:"flex",alignItems:"center",gap:"7px",cursor:"pointer",padding:"6px 12px",borderRadius:"8px",background:(cat.scoringAvgMode||"normal")===v?"rgba(201,168,76,.12)":"var(--bg3)",border:"1px solid "+((cat.scoringAvgMode||"normal")===v?"var(--gold)":"var(--border)")}}><input type="radio" checked={(cat.scoringAvgMode||"normal")===v} onChange={()=>updCat(cat.id,{scoringAvgMode:v})} /><span style={{fontSize:"12px"}}>{lbl}</span></label>)}</div></div>
                 {cat.scoringType==="detailed"&&(<div><label style={{fontSize:"12px",color:"var(--muted)",display:"block",marginBottom:"6px"}}>채점 항목</label><div style={{display:"flex",gap:"6px",flexWrap:"wrap"}}>{(cat.criteria||[]).map((k,i)=><div key={i} style={{display:"flex",alignItems:"center",gap:"3px"}}><input value={k} style={{width:"90px"}} onChange={e=>{const c2=[...(cat.criteria||[])];c2[i]=e.target.value;updCat(cat.id,{criteria:c2});}} /><button className="btn btn-ghost" style={{padding:"4px 6px",fontSize:"11px",color:"var(--red2)"}} onClick={()=>updCat(cat.id,{criteria:(cat.criteria||[]).filter((_,j)=>j!==i)})}>×</button></div>)}<button className="btn btn-ghost btn-sm" style={{fontSize:"11px"}} onClick={()=>updCat(cat.id,{criteria:[...(cat.criteria||[]),"항목"]})}>+ 항목 추가</button></div></div>)}
-                <div><label style={{fontSize:"12px",color:"var(--muted)",display:"block",marginBottom:"6px"}}>토너먼트 단계</label><div style={{display:"flex",gap:"6px",flexWrap:"wrap"}}>{[[2,"2단계"],[3,"3단계"],[4,"4단계"]].map(([n,lbl])=><label key={n} style={{display:"flex",alignItems:"center",gap:"7px",cursor:"pointer",padding:"6px 12px",borderRadius:"8px",background:(cat.stageCount||3)===n?"rgba(52,152,219,.1)":"var(--bg3)",border:"1px solid "+((cat.stageCount||3)===n?"var(--blue)":"var(--border)")}}><input type="radio" checked={(cat.stageCount||3)===n} onChange={()=>{if(!window.confirm("스테이지 단계를 변경하면 기존 스테이지 데이터가 초기화됩니다."))return;const ns=mkStages(n);updCat(cat.id,{stageCount:n,stages:ns,rounds:(cat.rounds||[]).filter(r=>ns.some(s=>s.stageKey===r.stageKey))});}} /><span style={{fontSize:"12px"}}>{lbl}</span></label>)}</div></div>
+                <div><label style={{fontSize:"12px",color:"var(--muted)",display:"block",marginBottom:"6px"}}>토너먼트 단계</label><div style={{display:"flex",gap:"6px",flexWrap:"wrap"}}>{[[1,"단판 결승"],[2,"2단계"],[3,"3단계"],[4,"4단계"]].map(([n,lbl])=><label key={n} style={{display:"flex",alignItems:"center",gap:"7px",cursor:"pointer",padding:"6px 12px",borderRadius:"8px",background:(cat.stageCount||3)===n?"rgba(52,152,219,.1)":"var(--bg3)",border:"1px solid "+((cat.stageCount||3)===n?"var(--blue)":"var(--border)")}}><input type="radio" checked={(cat.stageCount||3)===n} onChange={()=>{if(!window.confirm("스테이지 단계를 변경하면 기존 스테이지 데이터가 초기화됩니다."))return;const ns=mkStages(n);updCat(cat.id,{stageCount:n,stages:ns,rounds:(cat.rounds||[]).filter(r=>ns.some(s=>s.stageKey===r.stageKey))});}} /><span style={{fontSize:"12px"}}>{lbl}</span></label>)}</div></div>
               </div>
             )}
             {catTab==="rounds"&&(
