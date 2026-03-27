@@ -27,7 +27,7 @@
 <div id="root"></div>
 <script type="text/babel">
 const { useState, useMemo } = React;
-const APP_VERSION = "v2.4.1";
+const APP_VERSION = "v2.4.2";
 const STYLE = `
   @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&display=swap');
   :root {
@@ -1108,16 +1108,28 @@ function DirectorPanel({tournament,scores,setTournament,users,judgeLocks,setJudg
                 <th style={{textAlign:"center"}}>{t("avg")}</th><th>메모</th>
               </tr></thead>
               <tbody>
-                {ranked.map((p,idx)=>{const avg=getAvg(p.id),isAdv=round.finalized&&(round.advancedIds||[]).includes(p.id),isElim=round.finalized&&!isAdv,memo=judgeUsers.map(j=>scores?.[selRound]?.[j.id]?.[p.id]?.memo).filter(Boolean).join(" | ");return(
-                  <tr key={p.id} style={{background:isAdv?"rgba(39,174,96,.08)":isElim?"rgba(192,57,43,.05)":"",borderLeft:isAdv?"3px solid var(--green)":isElim?"3px solid rgba(192,57,43,.3)":"3px solid transparent"}}>
-                    <td><span className="serif" style={{fontSize:"17px",color:idx<3?"var(--gold)":"var(--muted)",fontWeight:700}}>{idx+1}</span>{isAdv&&<span style={{fontSize:"10px",color:"var(--green)",marginLeft:"4px"}}>↑진출</span>}{isElim&&<span style={{fontSize:"10px",color:"var(--muted)",marginLeft:"4px"}}>탈락</span>}</td>
-                    <td style={{fontWeight:700,color:isAdv?"var(--green)":isElim?"var(--muted)":"var(--gold)"}}>{p.number}</td>
-                    <td style={{color:isElim?"var(--muted)":"var(--text)"}}>{getDisplayName(p,isJJCat)||"–"}</td>
-                    {judgeUsers.map(j=>{const sc=getJScore(j.id,p.id);const others=judgeUsers.filter(x=>x.id!==j.id).map(x=>getJScore(x.id,p.id)).filter(v=>v!=null);const isOut=sc!=null&&others.length>0&&tournament.outlierEnabled!==false&&others.filter(v=>Math.abs(sc-v)>=tournament.outlierThreshold).length>=Math.ceil(others.length*0.6);return<td key={j.id} style={{textAlign:"center",color:isOut?"var(--warn)":sc!=null?"var(--text)":"var(--muted)",fontWeight:isOut?700:400}}>{sc!=null?sc.toFixed(2):"–"}{isOut&&<span style={{fontSize:"9px",display:"block"}}>⚠</span>}</td>;})}
-                    <td style={{textAlign:"center",fontWeight:700,color:avg!=null?"var(--gold)":"var(--muted)"}}>{avg!=null?avg.toFixed(2):"–"}</td>
-                    <td style={{fontSize:"11px",color:"var(--muted)",maxWidth:"180px"}}>{memo}</td>
-                  </tr>
-                );})}
+                {(()=>{
+                  const mkRow=(p,idx,lbl)=>{const avg=getAvg(p.id),isAdv=round.finalized&&(round.advancedIds||[]).includes(p.id),isElim=round.finalized&&!isAdv,memo=judgeUsers.map(j=>scores?.[selRound]?.[j.id]?.[p.id]?.memo).filter(Boolean).join(" | ");return(
+                    <tr key={p.id} style={{background:isAdv?"rgba(39,174,96,.08)":isElim?"rgba(192,57,43,.05)":"",borderLeft:isAdv?"3px solid var(--green)":isElim?"3px solid rgba(192,57,43,.3)":"3px solid transparent"}}>
+                      <td><span className="serif" style={{fontSize:"17px",color:idx<3?"var(--gold)":"var(--muted)",fontWeight:700}}>{idx+1}</span>{isAdv&&<span style={{fontSize:"10px",color:"var(--green)",marginLeft:"4px"}}>↑진출</span>}{isElim&&<span style={{fontSize:"10px",color:"var(--muted)",marginLeft:"4px"}}>탈락</span>}</td>
+                      <td style={{fontWeight:700,color:isAdv?"var(--green)":isElim?"var(--muted)":"var(--gold)"}}>{p.number}</td>
+                      <td style={{color:isElim?"var(--muted)":"var(--text)"}}>{getDisplayName(p,isJJCat)||"–"}{lbl&&<span style={{fontSize:"10px",marginLeft:"5px",color:lbl==="L"?"var(--blue)":"var(--red2)",fontWeight:700}}>[{lbl}]</span>}</td>
+                      {judgeUsers.map(j=>{const sc=getJScore(j.id,p.id);const others=judgeUsers.filter(x=>x.id!==j.id).map(x=>getJScore(x.id,p.id)).filter(v=>v!=null);const isOut=sc!=null&&others.length>0&&tournament.outlierEnabled!==false&&others.filter(v=>Math.abs(sc-v)>=tournament.outlierThreshold).length>=Math.ceil(others.length*0.6);return<td key={j.id} style={{textAlign:"center",color:isOut?"var(--warn)":sc!=null?"var(--text)":"var(--muted)",fontWeight:isOut?700:400}}>{sc!=null?sc.toFixed(2):"–"}{isOut&&<span style={{fontSize:"9px",display:"block"}}>⚠</span>}</td>;})};
+                      <td style={{textAlign:"center",fontWeight:700,color:avg!=null?"var(--gold)":"var(--muted)"}}>{avg!=null?avg.toFixed(2):"–"}</td>
+                      <td style={{fontSize:"11px",color:"var(--muted)",maxWidth:"180px"}}>{memo}</td>
+                    </tr>
+                  );};
+                  if(!isJJCat) return ranked.map((p,idx)=>mkRow(p,idx,null));
+                  const leaders=ranked.filter(p=>p.gender==="male"||p.gender==="couple");
+                  const followers=ranked.filter(p=>p.gender==="female");
+                  const nc=4+judgeUsers.length;
+                  return [
+                    <tr key="hL"><td colSpan={nc} style={{background:"rgba(52,152,219,.12)",color:"var(--blue)",fontWeight:700,fontSize:"12px",padding:"5px 10px",borderLeft:"3px solid var(--blue)"}}>👑 리더 ({leaders.length}명)</td></tr>,
+                    ...leaders.map((p,idx)=>mkRow(p,idx,"L")),
+                    <tr key="hF"><td colSpan={nc} style={{background:"rgba(231,76,60,.1)",color:"var(--red2)",fontWeight:700,fontSize:"12px",padding:"5px 10px",borderLeft:"3px solid var(--red2)"}}>💃 팔로워 ({followers.length}명)</td></tr>,
+                    ...followers.map((p,idx)=>mkRow(p,idx,"F")),
+                  ];
+                })()}
               </tbody>
             </table>
           </div>
