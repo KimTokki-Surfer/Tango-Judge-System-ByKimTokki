@@ -27,7 +27,7 @@
 <div id="root"></div>
 <script type="text/babel">
 const { useState, useMemo } = React;
-const APP_VERSION = "v2.3.2";
+const APP_VERSION = "v2.4.0";
 const STYLE = `
   @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&display=swap');
   :root {
@@ -1262,6 +1262,26 @@ function DirectorPanel({tournament,scores,setTournament,users,judgeLocks,setJudg
   );
 }
 /* ══ LivePanel ══ */
+// JJ 순위 리스트 렌더러 (리더/팔로워 분리)
+function renderJJRankSection(items, medals, isLive) {
+  const fs = isLive ? {num:"18px",name:"16px",score:"1.8rem",pad:"14px 18px"} : {num:"15px",name:"13px",score:"1.5rem",pad:"11px 16px"};
+  return items.map((r,idx)=>{
+    const isAdv = r.isAdv, isElim = r.isElim;
+    return(
+      <div key={r.pid||r.id} style={{display:"flex",alignItems:"center",gap:"14px",padding:fs.pad,borderBottom:"1px solid rgba(42,42,42,.4)",background:isAdv?"rgba(39,174,96,.06)":isElim?"rgba(192,57,43,.04)":idx===0?"rgba(201,168,76,.08)":idx===1?"rgba(201,168,76,.05)":idx===2?"rgba(201,168,76,.03)":""}}>
+        <span style={{fontSize:"26px",minWidth:"38px",textAlign:"center"}}>{idx<3?medals[idx]:<span className="serif" style={{fontSize:"17px",color:"var(--muted)",fontWeight:700}}>{idx+1}</span>}</span>
+        <div style={{flex:1}}>
+          <span style={{color:isAdv?"var(--green)":isElim?"var(--muted)":"var(--gold)",fontWeight:700,fontSize:fs.num,marginRight:"9px"}}>{r.number}</span>
+          <span style={{fontWeight:600,fontSize:fs.name,color:isElim?"var(--muted)":"var(--text)"}}>{r.nickname||r.name||"–"}</span>
+          {isAdv&&<span className="tag tag-green" style={{marginLeft:"8px",fontSize:"10px"}}>↑진출</span>}
+          {isElim&&<span style={{fontSize:"11px",color:"var(--muted)",marginLeft:"8px"}}>탈락</span>}
+        </div>
+        <span className="live-rank" style={{fontSize:fs.score,color:isElim?"var(--muted)":"var(--gold)"}}>{r.avg!=null?r.avg.toFixed(2):"–"}</span>
+      </div>
+    );
+  });
+}
+
 function LivePanel({tournament,scores,users,t}) {
   const [selCat,setSelCat]=useState(((tournament.categories||[])[0]||{}).id||"");
   const [selRound,setSelRound]=useState(""),[mode,setMode]=useState("final");
@@ -1277,6 +1297,7 @@ function LivePanel({tournament,scores,users,t}) {
   const ranked=useMemo(()=>[...couples].sort((a,b)=>{const av=getAvg(a.id),bv=getAvg(b.id);if(av==null&&bv==null)return 0;if(av==null)return 1;if(bv==null)return-1;return bv-av;}),[couples,scores,selRound]);
   const pageUrl=typeof window!=="undefined"?window.location.href.split("?")[0]:"";
   const isJJCat=cat?.type==="jacknjill";
+  const isLeader=(p)=>p.gender==="male"||p.gender==="couple";
   return(
     <div style={{padding:"24px",maxWidth:"820px",margin:"0 auto"}}>
       <div style={{textAlign:"center",marginBottom:"22px"}}>
@@ -1302,7 +1323,24 @@ function LivePanel({tournament,scores,users,t}) {
           </div>
           <div className="card" style={{padding:0,overflow:"hidden"}}>
             <div style={{padding:"12px 18px",borderBottom:"1px solid var(--border)",background:"rgba(201,168,76,.06)"}}><h2 className="serif" style={{fontSize:"1.3rem",color:"var(--gold)"}}>{finalRes.catName} 최종 순위</h2></div>
-            {(finalRes.rankings||[]).map((r,idx)=>(
+            {isJJCat?(()=>{
+              const allPs=tournament.participants||[];
+              const leaders=(finalRes.rankings||[]).filter(r=>isLeader(allPs.find(p=>p.id===r.pid)||{})).map(r=>({...r,nickname:getDisplayName(allPs.find(p=>p.id===r.pid)||{r},false)||r.nickname||"–"}));
+              const followers=(finalRes.rankings||[]).filter(r=>!isLeader(allPs.find(p=>p.id===r.pid)||{})).map(r=>({...r,nickname:getDisplayName(allPs.find(p=>p.id===r.pid)||{},false)||r.nickname||"–"}));
+              return(
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:0}}>
+                  <div style={{borderRight:"1px solid var(--border)"}}>
+                    <div style={{padding:"8px 14px",background:"rgba(52,152,219,.1)",borderBottom:"1px solid var(--border)",textAlign:"center"}}><span style={{fontWeight:700,color:"var(--blue)",fontSize:"13px"}}>👑 리더 순위</span></div>
+                    {renderJJRankSection(leaders.map((r,i)=>({...r,pid:r.pid})),medals,true)}
+                  </div>
+                  <div>
+                    <div style={{padding:"8px 14px",background:"rgba(231,76,60,.1)",borderBottom:"1px solid var(--border)",textAlign:"center"}}><span style={{fontWeight:700,color:"var(--red2)",fontSize:"13px"}}>💃 팔로워 순위</span></div>
+                    {renderJJRankSection(followers.map((r,i)=>({...r,pid:r.pid})),medals,true)}
+                  </div>
+                </div>
+              );
+            })()
+            :(finalRes.rankings||[]).map((r,idx)=>(
               <div key={r.pid} style={{display:"flex",alignItems:"center",gap:"14px",padding:"14px 18px",borderBottom:"1px solid rgba(42,42,42,.4)",background:idx===0?"rgba(201,168,76,.08)":idx===1?"rgba(201,168,76,.05)":idx===2?"rgba(201,168,76,.03)":""}}>
                 <span style={{fontSize:"28px",minWidth:"40px",textAlign:"center"}}>{idx<3?medals[idx]:<span className="serif" style={{fontSize:"18px",color:"var(--muted)",fontWeight:700}}>{idx+1}</span>}</span>
                 <div style={{flex:1}}><span style={{color:"var(--gold)",fontWeight:700,fontSize:"18px",marginRight:"10px"}}>{r.number}</span><span style={{fontWeight:600,fontSize:"16px"}}>{r.nickname||"–"}</span></div>
@@ -1323,7 +1361,24 @@ function LivePanel({tournament,scores,users,t}) {
                 <span className="serif" style={{color:"var(--gold)",fontWeight:700}}>{round.title}</span>
                 {round.finalized&&<span className="tag tag-green">✓ 확정</span>}
               </div>
-              {ranked.map((p,idx)=>{const avg=getAvg(p.id),isAdv=(round.advancedIds||[]).includes(p.id),isElim=round.finalized&&!isAdv;return(
+              {isJJCat?(()=>{
+                const mkItem=(p)=>{const avg=getAvg(p.id),isAdv=(round.advancedIds||[]).includes(p.id),isElim=round.finalized&&!isAdv;return{pid:p.id,number:p.number,name:getDisplayName(p,true),avg,isAdv,isElim};};
+                const leaders=ranked.filter(p=>isLeader(p)).map(mkItem);
+                const followers=ranked.filter(p=>!isLeader(p)).map(mkItem);
+                return(
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:0}}>
+                    <div style={{borderRight:"1px solid var(--border)"}}>
+                      <div style={{padding:"7px 14px",background:"rgba(52,152,219,.1)",borderBottom:"1px solid var(--border)",textAlign:"center"}}><span style={{fontWeight:700,color:"var(--blue)",fontSize:"12px"}}>👑 리더</span></div>
+                      {renderJJRankSection(leaders,medals,true)}
+                    </div>
+                    <div>
+                      <div style={{padding:"7px 14px",background:"rgba(231,76,60,.1)",borderBottom:"1px solid var(--border)",textAlign:"center"}}><span style={{fontWeight:700,color:"var(--red2)",fontSize:"12px"}}>💃 팔로워</span></div>
+                      {renderJJRankSection(followers,medals,true)}
+                    </div>
+                  </div>
+                );
+              })()
+              :ranked.map((p,idx)=>{const avg=getAvg(p.id),isAdv=(round.advancedIds||[]).includes(p.id),isElim=round.finalized&&!isAdv;return(
                 <div key={p.id} style={{display:"flex",alignItems:"center",gap:"14px",padding:"12px 18px",borderBottom:"1px solid rgba(42,42,42,.4)",background:isAdv?"rgba(39,174,96,.06)":isElim?"rgba(192,57,43,.04)":idx<3?"rgba(201,168,76,.03)":""}}>
                   <span style={{fontSize:"22px",minWidth:"36px",textAlign:"center"}}>{idx<3?medals[idx]:<span className="serif" style={{fontSize:"16px",color:"var(--muted)"}}>{idx+1}</span>}</span>
                   <div style={{flex:1}}>
@@ -1335,6 +1390,7 @@ function LivePanel({tournament,scores,users,t}) {
                   <span className="live-rank" style={{color:isElim?"var(--muted)":"var(--gold)"}}>{avg!=null?avg.toFixed(2):"–"}</span>
                 </div>
               );})}
+
             </div>
           )}
         </>
@@ -1379,7 +1435,25 @@ function PublicObserverPanel({tournament,scores,users,lang,setLang,t}) {
             </div>
             <div className="card" style={{padding:0,overflow:"hidden"}}>
               <div style={{padding:"12px 18px",borderBottom:"1px solid var(--border)",background:"rgba(201,168,76,.06)"}}><h2 className="serif" style={{fontSize:"1.2rem",color:"var(--gold)"}}>{finalRes.catName} 최종 순위</h2></div>
-              {(finalRes.rankings||[]).map((r,idx)=>(
+              {isJJCat?(()=>{
+                const allPs=tournament.participants||[];
+                const isLdr=(p)=>p.gender==="male"||p.gender==="couple";
+                const leaders=(finalRes.rankings||[]).filter(r=>isLdr(allPs.find(p=>p.id===r.pid)||{})).map(r=>({...r,nickname:getDisplayName(allPs.find(p=>p.id===r.pid)||{},false)||r.nickname||"–"}));
+                const followers=(finalRes.rankings||[]).filter(r=>!isLdr(allPs.find(p=>p.id===r.pid)||{})).map(r=>({...r,nickname:getDisplayName(allPs.find(p=>p.id===r.pid)||{},false)||r.nickname||"–"}));
+                return(
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:0}}>
+                    <div style={{borderRight:"1px solid var(--border)"}}>
+                      <div style={{padding:"7px 14px",background:"rgba(52,152,219,.1)",borderBottom:"1px solid var(--border)",textAlign:"center"}}><span style={{fontWeight:700,color:"var(--blue)",fontSize:"12px"}}>👑 리더 순위</span></div>
+                      {renderJJRankSection(leaders,medals,false)}
+                    </div>
+                    <div>
+                      <div style={{padding:"7px 14px",background:"rgba(231,76,60,.1)",borderBottom:"1px solid var(--border)",textAlign:"center"}}><span style={{fontWeight:700,color:"var(--red2)",fontSize:"12px"}}>💃 팔로워 순위</span></div>
+                      {renderJJRankSection(followers,medals,false)}
+                    </div>
+                  </div>
+                );
+              })()
+              :(finalRes.rankings||[]).map((r,idx)=>(
                 <div key={r.pid} style={{display:"flex",alignItems:"center",gap:"12px",padding:"12px 18px",borderBottom:"1px solid rgba(42,42,42,.4)",background:idx===0?"rgba(201,168,76,.08)":idx===1?"rgba(201,168,76,.05)":idx===2?"rgba(201,168,76,.03)":""}}>
                   <span style={{fontSize:"26px",minWidth:"36px",textAlign:"center"}}>{idx<3?medals[idx]:<span className="serif" style={{fontSize:"17px",color:"var(--muted)",fontWeight:700}}>{idx+1}</span>}</span>
                   <div style={{flex:1}}><span style={{color:"var(--gold)",fontWeight:700,fontSize:"17px",marginRight:"9px"}}>{r.number}</span><span style={{fontWeight:600,fontSize:"15px"}}>{r.nickname||"–"}</span></div>
@@ -1405,7 +1479,25 @@ function PublicObserverPanel({tournament,scores,users,lang,setLang,t}) {
             </div>
             <div className="card" style={{padding:0,overflow:"hidden"}}>
               {rankd.length===0?<div style={{padding:"18px",textAlign:"center",color:"var(--muted)"}}>채점 진행 중</div>
-                :rankd.map((p,idx)=>{const avg=getAvg(round.id,p.id),isAdv=round.finalized&&(round.advancedIds||[]).includes(p.id),isElim=round.finalized&&!isAdv;return(
+                :isJJCat?(()=>{
+                    const isLdr=(p)=>p.gender==="male"||p.gender==="couple";
+                    const mkI=(p)=>{const avg=getAvg(round.id,p.id),isAdv=round.finalized&&(round.advancedIds||[]).includes(p.id),isElim=round.finalized&&!isAdv;return{pid:p.id,number:p.number,name:getDisplayName(p,true),avg,isAdv,isElim};};
+                    const leaders=rankd.filter(p=>isLdr(p)).map(mkI);
+                    const followers=rankd.filter(p=>!isLdr(p)).map(mkI);
+                    return(
+                      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:0}}>
+                        <div style={{borderRight:"1px solid var(--border)"}}>
+                          <div style={{padding:"6px 12px",background:"rgba(52,152,219,.1)",borderBottom:"1px solid var(--border)",textAlign:"center"}}><span style={{fontWeight:700,color:"var(--blue)",fontSize:"11px"}}>👑 리더</span></div>
+                          {renderJJRankSection(leaders,medals,false)}
+                        </div>
+                        <div>
+                          <div style={{padding:"6px 12px",background:"rgba(231,76,60,.1)",borderBottom:"1px solid var(--border)",textAlign:"center"}}><span style={{fontWeight:700,color:"var(--red2)",fontSize:"11px"}}>💃 팔로워</span></div>
+                          {renderJJRankSection(followers,medals,false)}
+                        </div>
+                      </div>
+                    );
+                  })()
+                  :rankd.map((p,idx)=>{const avg=getAvg(round.id,p.id),isAdv=round.finalized&&(round.advancedIds||[]).includes(p.id),isElim=round.finalized&&!isAdv;return(
                   <div key={p.id} style={{display:"flex",alignItems:"center",gap:"12px",padding:"11px 16px",borderBottom:"1px solid rgba(42,42,42,.35)",background:isAdv?"rgba(39,174,96,.06)":isElim?"rgba(192,57,43,.04)":idx<3?"rgba(201,168,76,.03)":""}}>
                     <span style={{fontSize:"20px",minWidth:"32px",textAlign:"center"}}>{idx<3?medals[idx]:<span className="serif" style={{fontSize:"14px",color:"var(--muted)"}}>{idx+1}</span>}</span>
                     <div style={{flex:1}}><span style={{color:isAdv?"var(--green)":isElim?"var(--muted)":"var(--gold)",fontWeight:700,fontSize:"15px",marginRight:"7px"}}>{p.number}</span><span style={{fontSize:"14px",color:isElim?"var(--muted)":"var(--text)"}}>{getDisplayName(p,isJJCat)||"–"}</span>{isAdv&&<span className="tag tag-green" style={{marginLeft:"7px",fontSize:"10px"}}>↑진출</span>}</div>
